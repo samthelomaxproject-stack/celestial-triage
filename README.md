@@ -46,6 +46,7 @@ Policy decisions use detector maxima, detection evidence, review state, poor cat
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -e .
 ```
 
 ## Quickstart (mock runnable)
