@@ -140,6 +140,11 @@ python -m celestial_triage.cli top-candidates --limit 50 --export csv --output t
 python -m celestial_triage.cli top-candidates --limit 50 --export json --output top_candidates.json
 ```
 
+### Update analyst review state from CLI
+```bash
+python -m celestial_triage.cli update-review --candidate-id <ID> --state reviewing --tags "iso,priority" --notes "Needs follow-up"
+```
+
 ## Launch UI
 ```bash
 python -m celestial_triage.cli launch-ui

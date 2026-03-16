@@ -2,6 +2,7 @@ import json
 import sqlite3
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
 from celestial_triage.scoring.iso_review import build_iso_review_signal
@@ -12,7 +13,7 @@ st.set_page_config(page_title="Celestial Triage", layout="wide")
 st.title("Celestial Triage Dashboard")
 
 if not DB_PATH.exists():
-    st.warning("Database not found. Run: init-db → seed-mock → run-pipeline")
+    st.warning("Database not found. Run: init-db → seed-mock/ingest-jsonl → run-pipeline")
     st.stop()
 
 conn = sqlite3.connect(DB_PATH)
@@ -38,29 +39,45 @@ with st.sidebar:
             "deep_anomaly_detector",
         ],
     )
-    band = st.selectbox("Score band", ["all", "high", "medium", "low"])
+    review_state = st.selectbox("Review state", ["all", "new", "reviewing", "follow-up", "dismissed"])
+    retention = st.selectbox("Retention tier", ["all", "hot", "warm", "cold", "disposable"])
+    high_iso_only = st.checkbox("High ISO score only (>=0.7)", value=False)
     limit = st.slider("Top N", 10, 200, 50)
 
-filters = []
-vals: list = []
-if detector != "all":
-    filters.append("detector_name=?")
-    vals.append(detector)
-if band != "all":
-    filters.append("score_band=?")
-    vals.append(band)
-where = f"WHERE {' AND '.join(filters)}" if filters else ""
-
-q = f"""
-SELECT candidate_id, MAX(score) max_score
-FROM detector_scores
-{where}
-GROUP BY candidate_id
-ORDER BY max_score DESC
-LIMIT ?
+base_sql = """
+SELECT c.candidate_id,
+       c.review_status,
+       ap.retention_tier,
+       MAX(ds.score) as max_score,
+       MAX(CASE WHEN ds.detector_name='iso_detector' THEN ds.score ELSE NULL END) as iso_score
+FROM candidates c
+LEFT JOIN detector_scores ds ON ds.candidate_id = c.candidate_id
+LEFT JOIN archive_policies ap ON ap.candidate_id = c.candidate_id
+GROUP BY c.candidate_id, c.review_status, ap.retention_tier
 """
-vals.append(limit)
-rows = conn.execute(q, vals).fetchall()
+
+rows = [dict(r) for r in conn.execute(base_sql).fetchall()]
+
+if detector != "all":
+    allowed = {
+        r["candidate_id"]
+        for r in conn.execute(
+            "SELECT candidate_id FROM detector_scores WHERE detector_name=?",
+            (detector,),
+        ).fetchall()
+    }
+    rows = [r for r in rows if r["candidate_id"] in allowed]
+
+if review_state != "all":
+    rows = [r for r in rows if (r.get("review_status") or "new") == review_state]
+
+if retention != "all":
+    rows = [r for r in rows if (r.get("retention_tier") or "") == retention]
+
+if high_iso_only:
+    rows = [r for r in rows if float(r.get("iso_score") or 0.0) >= 0.7]
+
+rows = sorted(rows, key=lambda r: float(r.get("max_score") or 0.0), reverse=True)[:limit]
 
 st.subheader("Top-ranked candidates")
 st.dataframe(rows, use_container_width=True)
@@ -89,53 +106,66 @@ if candidate_id:
         """,
         (candidate_id,),
     ).fetchall()
-    retention = conn.execute("SELECT * FROM archive_policies WHERE candidate_id=?", (candidate_id,)).fetchone()
+    retention_row = conn.execute("SELECT * FROM archive_policies WHERE candidate_id=?", (candidate_id,)).fetchone()
 
     with c1:
-        st.markdown("### Candidate")
+        st.markdown("### Candidate Console")
         st.json(dict(cand) if cand else {})
         if cand and cand.get("mock_archetype_label"):
             st.info(f"Demo-only mock archetype label: {cand['mock_archetype_label']}")
 
-        st.markdown("### Retention tier")
-        if retention:
-            st.metric("Tier", retention["retention_tier"])
-            st.caption(retention["rationale"])
-        else:
-            st.info("No retention decision yet. Run `assign-retention`.")
+        st.markdown("### Timeline summary")
+        if feats:
+            st.write(f"First seen: `{feats['first_seen']}`")
+            st.write(f"Last seen: `{feats['last_seen']}`")
+            st.write(f"Detection count: `{feats['detection_count']}`")
+            st.write(f"Detection span (h): `{float(feats['detection_span_hours']):.2f}`")
 
-        st.markdown("### Motion features")
+        if dets:
+            df_dets = pd.DataFrame([dict(d) for d in dets])
+            st.markdown("### Candidate timeline (magnitude)")
+            try:
+                df_dets["timestamp"] = pd.to_datetime(df_dets["timestamp"])
+                chart_df = df_dets.set_index("timestamp")[["magnitude"]]
+                st.line_chart(chart_df)
+            except Exception:
+                st.caption("Timeline chart unavailable for current data formatting")
+
+        st.markdown("### Motion / Orbit summary")
         if feats:
             st.json(
                 {
-                    "detection_count": feats["detection_count"],
-                    "first_seen": feats["first_seen"],
-                    "last_seen": feats["last_seen"],
-                    "detection_span_hours": feats["detection_span_hours"],
                     "motion_rate_deg_per_hour": feats["motion_rate_deg_per_hour"],
-                    "motion_consistency_placeholder": feats["motion_consistency_placeholder"],
-                    "direction_consistency_placeholder": feats["direction_consistency_placeholder"],
-                    "heading_deg_placeholder": feats["heading_deg_placeholder"],
-                }
-            )
-
-        st.markdown("### Orbit scaffold features")
-        if feats:
-            st.json(
-                {
+                    "motion_consistency": feats["motion_consistency_placeholder"],
+                    "direction_consistency": feats["direction_consistency_placeholder"],
+                    "heading_deg": feats["heading_deg_placeholder"],
+                    "brightness_trend": feats["brightness_trend"],
                     "orbit_fit_quality": feats["orbit_fit_quality"],
                     "eccentricity_placeholder": feats["eccentricity_placeholder"],
                     "hyperbolic_likelihood": feats["hyperbolic_likelihood"],
-                    "inbound_outbound_placeholder": feats["inbound_outbound_placeholder"],
+                    "inbound_outbound": feats["inbound_outbound_placeholder"],
                 }
             )
-
-        st.markdown("### Shared features (full)")
-        st.json(dict(feats) if feats else {})
 
         st.markdown("### Detector scores (side-by-side)")
         pivot = {r["detector_name"]: float(r["score"]) for r in scores}
         st.dataframe([pivot], use_container_width=True)
+
+        st.markdown("### Detector conflicts")
+        iso = float(pivot.get("iso_detector", 0.0))
+        neo = float(pivot.get("neo_detector", 0.0))
+        kbo = float(pivot.get("kbo_detector", 0.0))
+        st.json(
+            {
+                "iso_vs_neo_delta": round(iso - neo, 3),
+                "iso_vs_kbo_delta": round(iso - kbo, 3),
+                "competing_high": [
+                    name
+                    for name, val in [("iso_detector", iso), ("neo_detector", neo), ("kbo_detector", kbo)]
+                    if val >= 0.6
+                ],
+            }
+        )
 
         st.markdown("### ISO Review")
         iso_review = build_iso_review_signal(dict(feats) if feats else {}, [dict(s) for s in scores])
@@ -152,29 +182,30 @@ if candidate_id:
                     st.write(f"- {reason}")
                 st.caption(f"Scored at {r['created_at']}")
 
-        st.markdown("### Detection timeline summary")
-        if dets:
-            first_ts = dets[0]["timestamp"]
-            last_ts = dets[-1]["timestamp"]
-            st.write(f"First seen: `{first_ts}`")
-            st.write(f"Last seen: `{last_ts}`")
-            st.write(f"Sequence length: `{len(dets)}` detections")
         st.markdown("### Detection history")
         st.dataframe(dets, use_container_width=True)
 
+        st.markdown("### Retention")
+        if retention_row:
+            st.metric("Tier", retention_row["retention_tier"])
+            st.caption(retention_row["rationale"])
+        else:
+            st.info("No retention decision yet. Run `assign-retention`.")
+
     with c2:
-        st.markdown("### Review actions")
-        reviewed = st.checkbox("Mark reviewed")
-        tags = st.text_input("Tags (comma-separated)")
-        notes = st.text_area("Analyst notes")
+        st.markdown("### Review workflow")
+        current_state = (cand["review_status"] if cand else "new") or "new"
+        state = st.selectbox("Review state", ["new", "reviewing", "follow-up", "dismissed"], index=["new", "reviewing", "follow-up", "dismissed"].index(current_state if current_state in ["new", "reviewing", "follow-up", "dismissed"] else "new"))
+        tags = st.text_input("Tags (comma-separated)", value=(cand["tags"] if cand else "") or "")
+        notes = st.text_area("Analyst notes", value=(cand["notes"] if cand else "") or "")
         if st.button("Save review"):
             conn.execute(
-                "INSERT OR REPLACE INTO reviews(candidate_id, reviewed_flag, reviewed_by, reviewed_at, tags, analyst_notes) VALUES (?, ?, 'analyst', datetime('now'), ?, ?)",
-                (candidate_id, int(reviewed), tags, notes),
+                "INSERT OR REPLACE INTO reviews(candidate_id, reviewed_flag, review_state, reviewed_by, reviewed_at, tags, analyst_notes) VALUES (?, ?, ?, 'analyst', datetime('now'), ?, ?)",
+                (candidate_id, int(state != "new"), state, tags, notes),
             )
             conn.execute(
                 "UPDATE candidates SET review_status=?, tags=?, notes=? WHERE candidate_id=?",
-                ("reviewed" if reviewed else "unreviewed", tags, notes, candidate_id),
+                (state, tags, notes, candidate_id),
             )
             conn.commit()
             st.success("Review saved")

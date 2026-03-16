@@ -60,6 +60,10 @@ class Database:
             cand_cols = {r[1] for r in c.execute("PRAGMA table_info(candidates)").fetchall()}
             if "mock_archetype_label" not in cand_cols:
                 c.execute("ALTER TABLE candidates ADD COLUMN mock_archetype_label TEXT")
+
+            review_cols = {r[1] for r in c.execute("PRAGMA table_info(reviews)").fetchall()}
+            if "review_state" not in review_cols:
+                c.execute("ALTER TABLE reviews ADD COLUMN review_state TEXT")
             c.commit()
 
     def insert_raw_event(self, raw: RawEvent) -> None:
@@ -160,7 +164,7 @@ class Database:
                     avg_ra,
                     avg_dec,
                     "active",
-                    "unreviewed",
+                    "new",
                     archetype,
                     candidate_id,
                     candidate_id,
@@ -237,18 +241,21 @@ class Database:
             )
             c.commit()
 
-    def upsert_review(self, candidate_id: str, reviewed_flag: bool, tags: str = "", notes: str = "") -> None:
+    def upsert_review(self, candidate_id: str, review_state: str, tags: str = "", notes: str = "") -> None:
+        valid_states = {"new", "reviewing", "follow-up", "dismissed"}
+        state = review_state if review_state in valid_states else "new"
+        reviewed_flag = state in {"reviewing", "follow-up", "dismissed"}
         with self.conn() as c:
             c.execute(
                 """
-                INSERT OR REPLACE INTO reviews(candidate_id, reviewed_flag, reviewed_by, reviewed_at, tags, analyst_notes)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO reviews(candidate_id, reviewed_flag, review_state, reviewed_by, reviewed_at, tags, analyst_notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (candidate_id, int(reviewed_flag), "analyst", now_iso() if reviewed_flag else None, tags, notes),
+                (candidate_id, int(reviewed_flag), state, "analyst", now_iso() if reviewed_flag else None, tags, notes),
             )
             c.execute(
                 "UPDATE candidates SET review_status=?, tags=?, notes=? WHERE candidate_id=?",
-                ("reviewed" if reviewed_flag else "unreviewed", tags, notes, candidate_id),
+                (state, tags, notes, candidate_id),
             )
             c.commit()
 

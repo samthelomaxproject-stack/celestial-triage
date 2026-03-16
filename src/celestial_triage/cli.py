@@ -220,6 +220,12 @@ def cmd_scenario_report(args: argparse.Namespace) -> None:
     print(json.dumps(report, indent=2))
 
 
+def cmd_update_review(args: argparse.Namespace) -> None:
+    db = Database(DB_PATH)
+    db.upsert_review(candidate_id=args.candidate_id, review_state=args.state, tags=args.tags, notes=args.notes)
+    LOGGER.info("Updated review state for %s -> %s", args.candidate_id, args.state)
+
+
 def cmd_launch_ui(args: argparse.Namespace) -> None:
     subprocess.run(["streamlit", "run", "src/celestial_triage/ui/dashboard.py"], check=False)
 
@@ -273,6 +279,13 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("scenario-report", help="Summarize mock archetype vs detector outcomes")
     p.add_argument("--top-iso-limit", type=int, default=10, help="Number of top ISO candidates to include")
     p.set_defaults(func=cmd_scenario_report)
+
+    p = sub.add_parser("update-review", help="Update candidate analyst review state/notes")
+    p.add_argument("--candidate-id", required=True, help="Candidate id")
+    p.add_argument("--state", choices=["new", "reviewing", "follow-up", "dismissed"], required=True)
+    p.add_argument("--tags", default="", help="Comma-separated tags")
+    p.add_argument("--notes", default="", help="Analyst notes")
+    p.set_defaults(func=cmd_update_review)
 
     p = sub.add_parser("launch-ui", help="Launch Streamlit dashboard")
     p.set_defaults(func=cmd_launch_ui)

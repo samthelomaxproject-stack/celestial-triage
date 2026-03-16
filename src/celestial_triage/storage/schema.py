@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS detector_scores (
 CREATE TABLE IF NOT EXISTS reviews (
   candidate_id TEXT PRIMARY KEY,
   reviewed_flag INTEGER NOT NULL,
+  review_state TEXT,
   reviewed_by TEXT,
   reviewed_at TEXT,
   tags TEXT,
