@@ -19,6 +19,7 @@ from celestial_triage.detectors import (
 from celestial_triage.features.extractor import extract_shared_features
 from celestial_triage.ingest.external_jsonl import JsonlExternalAdapter
 from celestial_triage.ingest.image_assets import extract_image_assets_from_payload
+from celestial_triage.ingest.image_preview import render_preview_png
 from celestial_triage.ingest.lasair_api import LasairApiAdapter
 from celestial_triage.ingest.lasair_presets import PRESETS, resolve_preset
 from celestial_triage.ingest.mock_feed import MockFeedAdapter
@@ -70,14 +71,24 @@ def _ingest_raw_events(db: Database, events: list, label: str) -> tuple[int, int
 
         image_refs = extract_image_assets_from_payload(raw.payload)
         for item in image_refs:
+            embedded = item.get("embedded")
+            local_preview = None
+            if isinstance(embedded, dict):
+                local_preview = render_preview_png(
+                    source_id=det.source_id,
+                    kind=item["kind"],
+                    source_field=item.get("source_field", ""),
+                    embedded=embedded,
+                )
             db.upsert_image_asset(
                 detection_id=det.detection_id,
                 source_id=det.source_id,
                 broker_name=det.broker_name,
                 kind=item["kind"],
-                remote_url=item["url"],
+                remote_url=item.get("url") or "embedded://local",
+                local_path=local_preview,
                 source_field=item.get("source_field", ""),
-                metadata=item.get("metadata", {}),
+                metadata={**item.get("metadata", {}), "payload_type": (embedded or {}).get("payload_type") if isinstance(embedded, dict) else "url"},
             )
             linked_images += 1
 
@@ -150,14 +161,28 @@ def _fetch_and_link_lasair_cutouts(db: Database, adapter: LasairApiAdapter, sour
             continue
 
         for item in image_refs:
+            embedded = item.get("embedded")
+            local_preview = None
+            if isinstance(embedded, dict):
+                local_preview = render_preview_png(
+                    source_id=str(source_id),
+                    kind=item["kind"],
+                    source_field=item.get("source_field", ""),
+                    embedded=embedded,
+                )
             db.upsert_image_asset(
                 detection_id=det["detection_id"],
                 source_id=source_id,
                 broker_name=str(det.get("broker_name") or "lasair_api"),
                 kind=item["kind"],
-                remote_url=item["url"],
+                remote_url=item.get("url") or "embedded://local",
+                local_path=local_preview,
                 source_field=item.get("source_field", ""),
-                metadata={"detail_fetch": True, **item.get("metadata", {})},
+                metadata={
+                    "detail_fetch": True,
+                    **item.get("metadata", {}),
+                    "payload_type": (embedded or {}).get("payload_type") if isinstance(embedded, dict) else "url",
+                },
             )
             image_assets += 1
 

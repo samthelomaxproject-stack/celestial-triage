@@ -255,10 +255,17 @@ When payloads contain cutout/image links, the Mac UI image panel shows them and 
 
 `ingest-lasair --fetch-cutouts` adds a follow-on detail lookup pass for ingested objects, attempts to discover image references from object-detail responses, and stores them in `image_assets`.
 
+When embedded/base64 cutout payloads are present, Celestial Triage attempts to decode and render local PNG previews automatically.
+
+Preview storage location:
+- default: `./image_previews/<source_id>/...png`
+- override with env: `CELESTIAL_TRIAGE_PREVIEW_DIR`
+
 Current limitations:
-- minimal LSST query fields (for example `diaObjectId, ra, decl`) may not include cutout URLs directly.
+- minimal LSST query fields (for example `diaObjectId, ra, decl`) may not include cutout URLs or embedded stamps directly.
 - object-detail endpoint/shape differs by broker/domain; some objects will return no image/cutout references.
-- cutout lookup failures do not fail primary ingest; they are logged and skipped.
+- embedded FITS-like payload support depends on payload shape; binary FITS decoding is best-effort.
+- cutout lookup/render failures do not fail primary ingest; they are logged and skipped.
 
 ---
 

@@ -83,6 +83,7 @@ class AnalystConsoleApp(tk.Tk):
         self.selected_candidate_id: str | None = None
         self.command_history: list[dict] = []
         self._current_images: list[dict] = []
+        self._image_photo = None
 
         self._build_layout()
         self.refresh_all()
@@ -177,8 +178,11 @@ class AnalystConsoleApp(tk.Tk):
         images_frame.columnconfigure(0, weight=1)
         self.image_list = tk.Listbox(images_frame, height=8)
         self.image_list.grid(row=0, column=0, sticky="ew")
+        self.image_list.bind("<<ListboxSelect>>", self.on_select_image)
+        self.image_preview_label = ttk.Label(images_frame, text="No preview selected")
+        self.image_preview_label.grid(row=1, column=0, sticky="ew", pady=4)
         ttk.Button(images_frame, text="Open selected image URL", command=self.open_selected_image).grid(
-            row=1, column=0, sticky="ew", pady=4
+            row=2, column=0, sticky="ew", pady=4
         )
 
         notebook = ttk.Notebook(parent)
@@ -410,6 +414,9 @@ class AnalystConsoleApp(tk.Tk):
     def refresh_detail(self) -> None:
         self.detail_text.delete("1.0", tk.END)
         self.image_list.delete(0, tk.END)
+        if hasattr(self, "image_preview_label"):
+            self.image_preview_label.configure(text="No preview selected", image="")
+            self._image_photo = None
         cid = self.selected_candidate_id
         if not cid:
             return
@@ -445,18 +452,39 @@ class AnalystConsoleApp(tk.Tk):
 
         self._current_images = images
         for img in images:
+            src = img.get("local_path") or img.get("remote_url", "")
+            label = "local-preview" if img.get("local_path") else "remote-url"
             self.image_list.insert(
                 tk.END,
-                f"{img.get('kind','unknown')} | {img.get('fetch_status','linked')} | {img.get('remote_url','')}"
+                f"{img.get('kind','unknown')} | {label} | {src}"
             )
+
+    def on_select_image(self, _event=None) -> None:
+        idx = self.image_list.curselection()
+        if not idx:
+            return
+        img = self._current_images[idx[0]]
+        local_path = img.get("local_path")
+        if local_path and Path(local_path).exists():
+            try:
+                self._image_photo = tk.PhotoImage(file=local_path)
+                self.image_preview_label.configure(image=self._image_photo, text="")
+                return
+            except Exception:
+                pass
+        self.image_preview_label.configure(text="No local preview available", image="")
+        self._image_photo = None
 
     def open_selected_image(self) -> None:
         idx = self.image_list.curselection()
         if not idx:
             return
         img = self._current_images[idx[0]]
+        if img.get("local_path") and Path(img["local_path"]).exists():
+            webbrowser.open(f"file://{img['local_path']}")
+            return
         url = img.get("remote_url")
-        if url:
+        if url and str(url).startswith(("http://", "https://")):
             webbrowser.open(url)
 
 
