@@ -6,6 +6,7 @@ def evaluate(features: dict) -> tuple[float, list[str]]:
     motion_rate = clamp01(features.get("motion_rate_deg_per_hour", 0.0) / 2.0)
     direction_consistency = clamp01(features.get("direction_consistency_placeholder", 0.0))
     orbit_fit_quality = clamp01(features.get("orbit_fit_quality", 0.0))
+    trajectory_quality = clamp01(features.get("trajectory_quality", 0.0))
     eccentricity = clamp01((features.get("eccentricity_placeholder", 0.0) - 0.8) / 0.7)
     hyperbolic = clamp01(features.get("hyperbolic_likelihood", features.get("hyperbolic_likelihood_placeholder", 0.0)))
     poor_catalog = clamp01(features.get("poor_catalog_fraction", 0.0))
@@ -21,7 +22,8 @@ def evaluate(features: dict) -> tuple[float, list[str]]:
         + 0.12 * poor_catalog
         + 0.10 * motion_rate
         + 0.10 * direction_consistency
-        + 0.08 * orbit_fit_quality
+        + 0.06 * orbit_fit_quality
+        + 0.06 * trajectory_quality
         + 0.05 * detection_count
         + 0.05 * span
         + io_bonus
@@ -36,6 +38,7 @@ def evaluate(features: dict) -> tuple[float, list[str]]:
         f"motion_rate_deg_per_hour={motion_rate:.2f}",
         f"direction_consistency={direction_consistency:.2f}",
         f"orbit_fit_quality={orbit_fit_quality:.2f}",
+        f"trajectory_quality={trajectory_quality:.2f}",
         f"detection_count_norm={detection_count:.2f}",
         f"detection_span_norm={span:.2f}",
         f"inbound_outbound={inbound_outbound}",

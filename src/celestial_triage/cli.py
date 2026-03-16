@@ -249,6 +249,7 @@ def _write_rows(rows: list[dict[str, Any]], fmt: str, output: Path, fieldnames: 
             lines.append(f"- ISO score: {r.get('iso_score',0)}")
             lines.append(f"- Interpretation: {r.get('primary_interpretation','unknown')} ({r.get('interpretation_confidence','weak')})")
             lines.append(f"- Conflict: {r.get('conflict_severity','none')} | Competing: {r.get('competing_interpretations','')}")
+            lines.append(f"- Trajectory quality: {r.get('trajectory_quality',0)} (motion={r.get('motion_consistency',0)}, direction={r.get('direction_consistency',0)})")
             lines.append(f"- Retention: {r.get('retention_tier','')}")
             lines.append(f"- Provenance: {r.get('provenance_summary','')}")
             lines.append(f"- Tags: {r.get('tags','')}")
@@ -387,6 +388,9 @@ def build_export_rows(
             "first_seen": first_seen,
             "last_seen": last_seen,
             "detection_count": detection_count,
+            "trajectory_quality": round(float(features.get("trajectory_quality", 0.0) or 0.0), 3),
+            "motion_consistency": round(float(features.get("motion_consistency_placeholder", 0.0) or 0.0), 3),
+            "direction_consistency": round(float(features.get("direction_consistency_placeholder", 0.0) or 0.0), 3),
             "primary_interpretation": interpretation["primary_interpretation"],
             "interpretation_confidence": interpretation["confidence"],
             "conflict_severity": interpretation["conflict_severity"],
@@ -434,6 +438,9 @@ def cmd_export_candidates(args: argparse.Namespace) -> None:
                 "first_seen",
                 "last_seen",
                 "detection_count",
+                "trajectory_quality",
+                "motion_consistency",
+                "direction_consistency",
                 "primary_interpretation",
                 "interpretation_confidence",
                 "conflict_severity",

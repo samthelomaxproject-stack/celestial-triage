@@ -8,6 +8,10 @@ def _safe_div(num: float, den: float) -> float:
     return 0.0 if den == 0 else num / den
 
 
+def _clamp(v: float, lo: float = 0.0, hi: float = 1.0) -> float:
+    return max(lo, min(hi, v))
+
+
 def extract_shared_features(detections: list[dict]) -> dict:
     if not detections:
         return {}
@@ -31,30 +35,36 @@ def extract_shared_features(detections: list[dict]) -> dict:
     angular_motion = sqrt((ra1 - ra0) ** 2 + (dec1 - dec0) ** 2)
     motion_rate = angular_motion / span_h if span_h > 0 else 0.0
 
-    # Motion consistency: step-length stability over ordered detections.
     step_lengths: list[float] = []
     headings: list[float] = []
+    heading_changes: list[float] = []
+    prev_heading = None
     for i in range(1, len(detections)):
         d_prev = detections[i - 1]
         d_cur = detections[i]
         step = sqrt((float(d_cur["ra"]) - float(d_prev["ra"])) ** 2 + (float(d_cur["dec"]) - float(d_prev["dec"])) ** 2)
         step_lengths.append(step)
-        headings.append(
-            heading_deg(
-                float(d_prev["ra"]),
-                float(d_prev["dec"]),
-                float(d_cur["ra"]),
-                float(d_cur["dec"]),
-            )
+        h = heading_deg(
+            float(d_prev["ra"]),
+            float(d_prev["dec"]),
+            float(d_cur["ra"]),
+            float(d_cur["dec"]),
         )
+        headings.append(h)
+        if prev_heading is not None:
+            hd = abs(h - prev_heading)
+            heading_changes.append(min(hd, 360.0 - hd))
+        prev_heading = h
 
     if step_lengths:
         mean_step = sum(step_lengths) / len(step_lengths)
         variance = sum((x - mean_step) ** 2 for x in step_lengths) / len(step_lengths)
         stdev = variance**0.5
         motion_consistency = max(0.0, 1.0 - _safe_div(stdev, mean_step + 1e-6))
+        path_smoothness = _clamp(1.0 - min(1.0, _safe_div(stdev, max(0.25, mean_step))))
     else:
         motion_consistency = 0.0
+        path_smoothness = 0.0
 
     if headings:
         mean_h = sum(headings) / len(headings)
@@ -65,6 +75,16 @@ def extract_shared_features(detections: list[dict]) -> dict:
     else:
         direction_consistency = 0.0
         heading_placeholder = 0.0
+
+    if heading_changes:
+        mean_hc = sum(heading_changes) / len(heading_changes)
+        heading_change_consistency = _clamp(1.0 - min(1.0, mean_hc / 90.0))
+    else:
+        heading_change_consistency = direction_consistency
+
+    trajectory_quality = _clamp(
+        0.40 * motion_consistency + 0.35 * direction_consistency + 0.25 * path_smoothness
+    )
 
     orbit_fit_placeholder = max(0.0, 1.0 - min(1.0, angular_motion / 50.0))
     hyperbolic_placeholder = min(1.0, (angular_motion / 20.0) * _safe_div(sum(poor_catalog_vals), len(detections)))
@@ -92,6 +112,9 @@ def extract_shared_features(detections: list[dict]) -> dict:
         "motion_consistency_placeholder": motion_consistency,
         "direction_consistency_placeholder": direction_consistency,
         "heading_deg_placeholder": heading_placeholder,
+        "heading_change_consistency": heading_change_consistency,
+        "path_smoothness_placeholder": path_smoothness,
+        "trajectory_quality": trajectory_quality,
         "poor_catalog_fraction": _safe_div(sum(poor_catalog_vals), len(poor_catalog_vals)),
         "avg_class_confidence": _safe_div(sum(class_conf), len(class_conf)),
         "angular_motion_placeholder": angular_motion,

@@ -141,13 +141,19 @@ if candidate_id:
             except Exception:
                 st.caption("Timeline chart unavailable for current data formatting")
 
-        st.markdown("### Motion / Orbit summary")
+        st.markdown("### Trajectory summary")
         if feats:
+            tq = float(feats["trajectory_quality"] or 0.0)
+            coherence = "coherent" if tq >= 0.65 else ("mixed" if tq >= 0.4 else "weak")
+            st.metric("Trajectory coherence", coherence, delta=f"{tq:.3f}")
             st.json(
                 {
                     "motion_rate_deg_per_hour": feats["motion_rate_deg_per_hour"],
                     "motion_consistency": feats["motion_consistency_placeholder"],
                     "direction_consistency": feats["direction_consistency_placeholder"],
+                    "heading_change_consistency": feats.get("heading_change_consistency"),
+                    "path_smoothness": feats.get("path_smoothness_placeholder"),
+                    "trajectory_quality": feats.get("trajectory_quality"),
                     "heading_deg": feats["heading_deg_placeholder"],
                     "brightness_trend": feats["brightness_trend"],
                     "orbit_fit_quality": feats["orbit_fit_quality"],
@@ -227,6 +233,7 @@ if candidate_id:
                 "first_seen": (feats["first_seen"] if feats else "") if feats else "",
                 "last_seen": (feats["last_seen"] if feats else "") if feats else "",
                 "detection_count": int((feats["detection_count"] if feats else 0) or 0),
+                "trajectory_quality": round(float((feats["trajectory_quality"] if feats else 0) or 0), 3),
             }
         )
 

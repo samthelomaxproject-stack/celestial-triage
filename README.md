@@ -13,6 +13,8 @@ This project ingests Rubin-style/broker alert-like data, normalizes detections i
 - Candidate grouping/track building and shared feature extraction
 - Motion analysis upgrades (motion rate, consistency, heading/direction placeholders)
 - Orbit-fit scaffolding (orbit_fit_quality, eccentricity_placeholder, hyperbolic_likelihood, inbound/outbound placeholder)
+- Candidate association refinement with coherence filtering for implausible track jumps
+- Trajectory consistency features (`heading_change_consistency`, `path_smoothness_placeholder`, `trajectory_quality`)
 - Scenario realism with explicit mock archetypes (inbound/outbound ISO-like, KBO-like, NEO-like, satellite-like, anomaly-like)
 - Scenario evaluation helper for detector/archetype alignment insights
 - Improved ISO ranking heuristics using refined motion/orbit scaffolds (still transparent rule-based)
@@ -215,6 +217,8 @@ python -m celestial_triage.cli --help
 
 ## Known limitations
 - Live Lasair integration is minimal and API/query behavior may vary by service/account configuration
+- Candidate association refinement is heuristic and may under/over-group in edge cases
+- Trajectory coherence fields are heuristic plausibility signals, not physical track guarantees
 - Orbit-fit/eccentricity/hyperbolic fields are heuristic scaffolds, not orbital certainty
 - Interpretation/confidence framing (`weak/moderate/strong`) is heuristic and should not be treated as physical certainty
 - Follow-up priority is an analyst aid derived from detector/feature heuristics, not a definitive classification

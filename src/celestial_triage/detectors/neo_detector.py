@@ -9,6 +9,7 @@ def evaluate(features: dict) -> tuple[float, list[str]]:
     consistency = clamp01(features.get("motion_consistency_placeholder", 0.0))
     motion_rate = clamp01(features.get("motion_rate_deg_per_hour", 0.0) / 2.5)
     orbit_quality = clamp01(features.get("orbit_fit_quality", 0.0))
+    trajectory_quality = clamp01(features.get("trajectory_quality", 0.0))
 
     # Separation from ISO: downweight explicitly hyperbolic/eccentric behavior.
     hyperbolic = clamp01(features.get("hyperbolic_likelihood", 0.0))
@@ -20,7 +21,11 @@ def evaluate(features: dict) -> tuple[float, list[str]]:
         + w["brightness"] * brightness
         + w["span"] * span
     )
-    score = clamp01(score * (0.7 + 0.15 * consistency + 0.15 * motion_rate) * (0.85 + 0.15 * orbit_quality))
+    score = clamp01(
+        score
+        * (0.65 + 0.15 * consistency + 0.10 * motion_rate + 0.10 * trajectory_quality)
+        * (0.85 + 0.15 * orbit_quality)
+    )
     score = clamp01(score * non_iso_penalty)
 
     return clamp01(score), [
@@ -29,5 +34,6 @@ def evaluate(features: dict) -> tuple[float, list[str]]:
         f"motion_rate={motion_rate:.2f}",
         f"motion_consistency={consistency:.2f}",
         f"orbit_fit_quality={orbit_quality:.2f}",
+        f"trajectory_quality={trajectory_quality:.2f}",
         f"iso_penalty_factor={non_iso_penalty:.2f}",
     ]

@@ -43,6 +43,9 @@ class Database:
                 "motion_consistency_placeholder": "REAL",
                 "direction_consistency_placeholder": "REAL",
                 "heading_deg_placeholder": "REAL",
+                "heading_change_consistency": "REAL",
+                "path_smoothness_placeholder": "REAL",
+                "trajectory_quality": "REAL",
                 "avg_class_confidence": "REAL",
                 "orbit_fit_quality": "REAL",
                 "eccentricity_placeholder": "REAL",
@@ -122,14 +125,59 @@ class Database:
             self.upsert_candidate_from_source(source_id)
         return len(source_ids)
 
+    def _coherent_detection_subset(self, rows: list[sqlite3.Row]) -> list[sqlite3.Row]:
+        """Select a coherent trajectory subset to reduce misleading rollups.
+
+        Heuristic: keep detections with plausible incremental steps and heading changes.
+        """
+        if len(rows) <= 2:
+            return rows
+
+        def _heading(a: sqlite3.Row, b: sqlite3.Row) -> float:
+            import math
+
+            d_ra = float(b["ra"]) - float(a["ra"])
+            d_dec = float(b["dec"]) - float(a["dec"])
+            return (math.degrees(math.atan2(d_ra, d_dec)) + 360.0) % 360.0
+
+        def _step(a: sqlite3.Row, b: sqlite3.Row) -> float:
+            import math
+
+            return math.sqrt((float(b["ra"]) - float(a["ra"])) ** 2 + (float(b["dec"]) - float(a["dec"])) ** 2)
+
+        accepted: list[sqlite3.Row] = [rows[0], rows[1]]
+        prev_heading = _heading(rows[0], rows[1])
+        prev_step = max(_step(rows[0], rows[1]), 1e-6)
+
+        for r in rows[2:]:
+            h = _heading(accepted[-1], r)
+            step = _step(accepted[-1], r)
+            heading_delta = abs(h - prev_heading)
+            heading_delta = min(heading_delta, 360.0 - heading_delta)
+
+            step_ratio = step / max(prev_step, 1e-6)
+            plausible = (heading_delta <= 75.0) and (0.2 <= step_ratio <= 4.5)
+
+            if plausible:
+                accepted.append(r)
+                prev_heading = h
+                prev_step = max(step, 1e-6)
+
+        # If filtering was too aggressive, keep original to avoid data loss.
+        if len(accepted) < max(2, int(0.5 * len(rows))):
+            return rows
+        return accepted
+
     def upsert_candidate_from_source(self, source_id: str) -> str:
         with self.conn() as c:
-            rows = c.execute(
+            all_rows = c.execute(
                 "SELECT * FROM detections WHERE source_id=? ORDER BY timestamp ASC",
                 (source_id,),
             ).fetchall()
-            if not rows:
+            if not all_rows:
                 raise ValueError("No detections for source")
+
+            rows = self._coherent_detection_subset(all_rows)
 
             candidate = c.execute(
                 "SELECT candidate_id FROM candidates WHERE source_id=?",
@@ -187,11 +235,12 @@ class Database:
                 INSERT OR REPLACE INTO shared_features
                 (candidate_id, detection_count, first_seen, last_seen, detection_span_hours, avg_magnitude, mag_delta_abs,
                  brightness_trend, moving_fraction, motion_rate_deg_per_hour, motion_consistency_placeholder,
-                 direction_consistency_placeholder, heading_deg_placeholder, poor_catalog_fraction,
+                 direction_consistency_placeholder, heading_deg_placeholder, heading_change_consistency,
+                 path_smoothness_placeholder, trajectory_quality, poor_catalog_fraction,
                  avg_class_confidence, angular_motion_placeholder, orbit_fit_quality, eccentricity_placeholder,
                  hyperbolic_likelihood, inbound_outbound_placeholder, orbit_fit_placeholder,
                  hyperbolic_likelihood_placeholder, anomaly_index_placeholder, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     candidate_id,
@@ -207,6 +256,9 @@ class Database:
                     features.get("motion_consistency_placeholder"),
                     features.get("direction_consistency_placeholder"),
                     features.get("heading_deg_placeholder"),
+                    features.get("heading_change_consistency"),
+                    features.get("path_smoothness_placeholder"),
+                    features.get("trajectory_quality"),
                     features.get("poor_catalog_fraction"),
                     features.get("avg_class_confidence"),
                     features.get("angular_motion_placeholder"),
