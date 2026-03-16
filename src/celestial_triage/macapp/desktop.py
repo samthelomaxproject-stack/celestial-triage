@@ -60,6 +60,12 @@ def _resolve_ui_python(repo_root: Path) -> str:
     return "python3"
 
 
+def _settings_path() -> Path:
+    cfg = Path.home() / ".config" / "celestial-triage"
+    cfg.mkdir(parents=True, exist_ok=True)
+    return cfg / "macapp_settings.json"
+
+
 class AnalystConsoleApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
@@ -70,6 +76,8 @@ class AnalystConsoleApp(tk.Tk):
         self.db_path = self.repo_root / DB_PATH
         self.db = Database(self.db_path)
         self.runner = SafeCliRunner(_resolve_ui_python(self.repo_root))
+        self.settings_file = _settings_path()
+        self.settings = self._load_settings()
 
         self.candidates: list[dict] = []
         self.selected_candidate_id: str | None = None
@@ -78,6 +86,28 @@ class AnalystConsoleApp(tk.Tk):
 
         self._build_layout()
         self.refresh_all()
+
+    def _load_settings(self) -> dict[str, str]:
+        if not self.settings_file.exists():
+            return {}
+        try:
+            return json.loads(self.settings_file.read_text())
+        except Exception:
+            return {}
+
+    def _save_settings(self) -> None:
+        payload = {
+            "lasair_api_token": self.lasair_token_var.get().strip(),
+            "lasair_api_base_url": self.lasair_base_url_var.get().strip(),
+        }
+        self.settings_file.parent.mkdir(parents=True, exist_ok=True)
+        self.settings_file.write_text(json.dumps(payload, indent=2))
+        try:
+            os.chmod(self.settings_file, 0o600)
+        except Exception:
+            pass
+        self.settings = payload
+        self.log(f"[settings] saved: {self.settings_file}")
 
     def _build_layout(self) -> None:
         self.columnconfigure(0, weight=1)
@@ -161,18 +191,21 @@ class AnalystConsoleApp(tk.Tk):
         self.tab_export = ttk.Frame(notebook, padding=6)
         self.tab_bundle = ttk.Frame(notebook, padding=6)
         self.tab_ops = ttk.Frame(notebook, padding=6)
+        self.tab_settings = ttk.Frame(notebook, padding=6)
 
         notebook.add(self.tab_ingest, text="Ingest")
         notebook.add(self.tab_review, text="Review")
         notebook.add(self.tab_export, text="Export")
         notebook.add(self.tab_bundle, text="Bundle")
         notebook.add(self.tab_ops, text="Ops")
+        notebook.add(self.tab_settings, text="Settings")
 
         self._build_ingest_tab()
         self._build_review_tab()
         self._build_export_tab()
         self._build_bundle_tab()
         self._build_ops_tab()
+        self._build_settings_tab()
 
         self.console_text.grid(row=3, column=0, sticky="nsew", pady=6)
 
@@ -254,10 +287,30 @@ class AnalystConsoleApp(tk.Tk):
         ttk.Button(f, text="followup-report", command=lambda: self.run_command("followup-report", {"limit": 20})).grid(row=4, column=0, sticky="ew")
         ttk.Button(f, text="scenario-report", command=lambda: self.run_command("scenario-report", {})).grid(row=5, column=0, sticky="ew")
 
+    def _build_settings_tab(self) -> None:
+        f = self.tab_settings
+        self.lasair_token_var = tk.StringVar(value=self.settings.get("lasair_api_token", ""))
+        self.lasair_base_url_var = tk.StringVar(
+            value=self.settings.get("lasair_api_base_url", "https://lasair.lsst.ac.uk/api")
+        )
+
+        ttk.Label(f, text="Lasair API token").grid(row=0, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.lasair_token_var, show="*", width=42).grid(row=0, column=1, sticky="ew")
+
+        ttk.Label(f, text="Lasair API base URL").grid(row=1, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.lasair_base_url_var, width=42).grid(row=1, column=1, sticky="ew")
+
+        ttk.Button(f, text="Save Settings", command=self._save_settings).grid(row=2, column=0, columnspan=2, sticky="ew", pady=4)
+        ttk.Label(
+            f,
+            text=f"Stored at: {self.settings_file}",
+            foreground="#666",
+        ).grid(row=3, column=0, columnspan=2, sticky="w")
+
     def run_ingest_lasair(self) -> None:
         params = {
             "lasair_mode": self.ingest_mode.get(),
-            "base_url": self.ingest_base_url.get(),
+            "base_url": self.ingest_base_url.get() or self.lasair_base_url_var.get(),
             "preset": self.ingest_preset.get() or None,
             "limit": self.ingest_limit.get(),
             "days_back": self.ingest_days_back.get(),
@@ -304,7 +357,15 @@ class AnalystConsoleApp(tk.Tk):
     def run_command(self, name: str, params: dict) -> None:
         preview = self.runner.preview(name, params)
         self.log(f"\n[{name}] preview: {preview}")
-        result = self.runner.run(name, params, cwd=self.repo_root)
+        extra_env: dict[str, str] = {}
+        token = (self.lasair_token_var.get() if hasattr(self, "lasair_token_var") else "").strip()
+        base_url = (self.lasair_base_url_var.get() if hasattr(self, "lasair_base_url_var") else "").strip()
+        if token:
+            extra_env["LASAIR_API_TOKEN"] = token
+        if base_url:
+            extra_env["LASAIR_API_BASE_URL"] = base_url
+
+        result = self.runner.run(name, params, cwd=self.repo_root, extra_env=extra_env)
         self.command_history.append({"name": name, "success": result.success, "at": result.ran_at})
         self.log(f"[{name}] success={result.success} rc={result.return_code} at={result.ran_at}")
         if result.stdout.strip():

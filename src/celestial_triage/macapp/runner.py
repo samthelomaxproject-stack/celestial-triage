@@ -121,11 +121,19 @@ class SafeCliRunner:
         args = self.build_args(command, params)
         return " ".join(shlex.quote(a) for a in args)
 
-    def run(self, command: str, params: dict[str, Any], cwd: Path | None = None) -> CommandResult:
+    def run(
+        self,
+        command: str,
+        params: dict[str, Any],
+        cwd: Path | None = None,
+        extra_env: dict[str, str] | None = None,
+    ) -> CommandResult:
         args = self.build_args(command, params)
         env = os.environ.copy()
         if cwd and "PYTHONPATH" not in env and (cwd / "src").exists():
             env["PYTHONPATH"] = "src"
+        if extra_env:
+            env.update({k: v for k, v in extra_env.items() if v is not None})
         proc = subprocess.run(args, cwd=cwd, env=env, capture_output=True, text=True)
         return CommandResult(
             name=command,
