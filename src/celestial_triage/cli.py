@@ -455,6 +455,95 @@ def cmd_export_candidates(args: argparse.Namespace) -> None:
     LOGGER.info("Exported %d candidates to %s (%s)", len(rows), output, args.format)
 
 
+def _bundle_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    detector_dist: dict[str, int] = {}
+    followup_dist: dict[str, int] = {}
+    interp_dist: dict[str, int] = {}
+    provenance_dist: dict[str, int] = {}
+
+    for r in rows:
+        det_scores = r.get("detector_scores", {})
+        if isinstance(det_scores, dict) and det_scores:
+            top = sorted(det_scores.items(), key=lambda kv: kv[1], reverse=True)[0][0]
+            detector_dist[top] = detector_dist.get(top, 0) + 1
+
+        fp = str(r.get("followup_priority") or "low")
+        followup_dist[fp] = followup_dist.get(fp, 0) + 1
+
+        pi = str(r.get("primary_interpretation") or "unknown")
+        interp_dist[pi] = interp_dist.get(pi, 0) + 1
+
+        for token in str(r.get("provenance_summary") or "").split(","):
+            token = token.strip()
+            if not token:
+                continue
+            k = token.split(":")[0].strip()
+            provenance_dist[k] = provenance_dist.get(k, 0) + 1
+
+    return {
+        "candidate_count": len(rows),
+        "detector_distribution": detector_dist,
+        "followup_priority_distribution": followup_dist,
+        "interpretation_distribution": interp_dist,
+        "provenance_distribution": provenance_dist,
+    }
+
+
+def cmd_bundle_cases(args: argparse.Namespace) -> None:
+    db = Database(DB_PATH)
+    rows = build_export_rows(
+        db,
+        review_state=args.review_state,
+        followup_priority=args.followup_priority,
+        detector_presence=args.detector,
+        high_iso_only=args.high_iso,
+        tagged_only=args.tagged_only,
+        broker=args.broker,
+    )
+
+    out_dir = Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    summary = _bundle_summary(rows)
+    summary_json_path = out_dir / "summary.json"
+    summary_md_path = out_dir / "summary.md"
+
+    summary_json_path.write_text(json.dumps({"summary": summary, "items": rows}, indent=2))
+
+    md_lines = [
+        "# Analyst Case Bundle",
+        "",
+        f"Candidates included: **{summary['candidate_count']}**",
+        "",
+        "## Detector distribution",
+        json.dumps(summary["detector_distribution"], indent=2),
+        "",
+        "## Follow-up priority distribution",
+        json.dumps(summary["followup_priority_distribution"], indent=2),
+        "",
+        "## Interpretation distribution",
+        json.dumps(summary["interpretation_distribution"], indent=2),
+        "",
+        "## Provenance summary",
+        json.dumps(summary["provenance_distribution"], indent=2),
+    ]
+    summary_md_path.write_text("\n".join(md_lines))
+
+    if args.include_details:
+        details_dir = out_dir / "candidates"
+        details_dir.mkdir(exist_ok=True)
+        for r in rows:
+            cid = str(r.get("candidate_id") or "unknown")
+            (details_dir / f"{cid}.json").write_text(json.dumps(r, indent=2))
+
+    LOGGER.info(
+        "Bundle created at %s (candidates=%d, details=%s)",
+        out_dir,
+        len(rows),
+        args.include_details,
+    )
+
+
 def cmd_launch_ui(args: argparse.Namespace) -> None:
     subprocess.run(["streamlit", "run", "src/celestial_triage/ui/dashboard.py"], check=False)
 
@@ -531,6 +620,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tagged-only", action="store_true", help="Only include candidates with tags")
     p.add_argument("--broker", default=None, help="Only include candidates seen from this broker/source")
     p.set_defaults(func=cmd_export_candidates)
+
+    p = sub.add_parser("bundle-cases", help="Create analyst case bundle directory")
+    p.add_argument("--output-dir", required=True, help="Bundle output directory")
+    p.add_argument("--review-state", choices=["new", "reviewing", "follow-up", "dismissed"], default=None)
+    p.add_argument("--followup-priority", choices=["low", "medium", "high", "urgent"], default=None)
+    p.add_argument("--detector", default=None, help="Require detector presence")
+    p.add_argument("--high-iso", action="store_true", help="Only include ISO score >= 0.7")
+    p.add_argument("--tagged-only", action="store_true", help="Only include tagged candidates")
+    p.add_argument("--broker", default=None, help="Only include candidates with this provenance source")
+    p.add_argument("--include-details", action="store_true", help="Write per-candidate detail JSON files")
+    p.set_defaults(func=cmd_bundle_cases)
 
     p = sub.add_parser("launch-ui", help="Launch Streamlit dashboard")
     p.set_defaults(func=cmd_launch_ui)

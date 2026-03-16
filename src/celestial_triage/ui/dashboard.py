@@ -221,6 +221,7 @@ if candidate_id:
             st.info("No retention decision yet. Run `assign-retention`.")
 
         st.markdown("### Export-ready summary")
+        st.caption("This payload is compatible with `export-candidates` and `bundle-cases` handoff workflows.")
         st.json(
             {
                 "candidate_id": candidate_id,
