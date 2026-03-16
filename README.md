@@ -15,6 +15,7 @@ This project ingests Rubin-style/broker alert-like data, normalizes detections i
 - Orbit-fit scaffolding (orbit_fit_quality, eccentricity_placeholder, hyperbolic_likelihood, inbound/outbound placeholder)
 - Scenario realism with explicit mock archetypes (inbound/outbound ISO-like, KBO-like, NEO-like, satellite-like, anomaly-like)
 - Scenario evaluation helper for detector/archetype alignment insights
+- Improved ISO ranking heuristics using motion/orbit scaffolds (still transparent rule-based)
 - Six detector modules with transparent scoring + reasons using candidate-level aggregates (span, trend, motion, orbit placeholders)
 - Score persistence in SQLite
 - Retention tier assignment (`hot`, `warm`, `cold`, `disposable`)
@@ -125,6 +126,7 @@ python -m celestial_triage.cli run-pipeline
 ## Scenario evaluation report (dev/demo)
 ```bash
 python -m celestial_triage.cli scenario-report
+python -m celestial_triage.cli scenario-report --top-iso-limit 20
 ```
 
 ## List top candidates
@@ -160,8 +162,8 @@ python -m celestial_triage.cli --help
 - `pytest` config is in `pyproject.toml`
 
 ## Known limitations
-- Uses mock feed only (no live broker integration yet)
-- Orbit fitting/hyperbolic logic are placeholders
+- Live Lasair integration is minimal and API/query behavior may vary by service/account configuration
+- Orbit fitting/hyperbolic logic remain placeholders (not orbital certainty)
 - Rule-based scoring only (transparent, non-ML v1)
 - UI is intentionally minimal for analyst workflow validation
 

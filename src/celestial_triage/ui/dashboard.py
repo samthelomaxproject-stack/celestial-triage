@@ -4,6 +4,8 @@ from pathlib import Path
 
 import streamlit as st
 
+from celestial_triage.scoring.iso_review import build_iso_review_signal
+
 DB_PATH = Path("celestial_triage.db")
 
 st.set_page_config(page_title="Celestial Triage", layout="wide")
@@ -134,6 +136,10 @@ if candidate_id:
         st.markdown("### Detector scores (side-by-side)")
         pivot = {r["detector_name"]: float(r["score"]) for r in scores}
         st.dataframe([pivot], use_container_width=True)
+
+        st.markdown("### ISO Review")
+        iso_review = build_iso_review_signal(dict(feats) if feats else {}, [dict(s) for s in scores])
+        st.json(iso_review)
 
         st.markdown("### Score reasons")
         for r in scores:

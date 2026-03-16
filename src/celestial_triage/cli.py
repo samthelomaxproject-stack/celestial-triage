@@ -216,7 +216,7 @@ def cmd_pipeline(args: argparse.Namespace) -> None:
 
 def cmd_scenario_report(args: argparse.Namespace) -> None:
     db = Database(DB_PATH)
-    report = archetype_evaluation_report(db)
+    report = archetype_evaluation_report(db, top_iso_limit=args.top_iso_limit)
     print(json.dumps(report, indent=2))
 
 
@@ -271,6 +271,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_top)
 
     p = sub.add_parser("scenario-report", help="Summarize mock archetype vs detector outcomes")
+    p.add_argument("--top-iso-limit", type=int, default=10, help="Number of top ISO candidates to include")
     p.set_defaults(func=cmd_scenario_report)
 
     p = sub.add_parser("launch-ui", help="Launch Streamlit dashboard")
