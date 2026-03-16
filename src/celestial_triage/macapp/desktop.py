@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import sys
 import webbrowser
@@ -28,16 +29,47 @@ from celestial_triage.scoring.interpretation import build_interpretation_summary
 from celestial_triage.storage.db import Database
 
 
+def _looks_like_repo_root(path: Path) -> bool:
+    return (path / "pyproject.toml").exists() and (path / "src" / "celestial_triage" / "cli.py").exists()
+
+
+def _resolve_repo_root() -> Path:
+    env_repo = Path((os.environ.get("CELESTIAL_TRIAGE_REPO") or "").strip()).expanduser()
+    if str(env_repo) and _looks_like_repo_root(env_repo):
+        return env_repo
+
+    candidates = [
+        Path.cwd(),
+        Path.home() / ".openclaw" / "workspace" / "celestial-triage",
+        Path(__file__).resolve().parents[3],
+    ]
+    for c in candidates:
+        if _looks_like_repo_root(c):
+            return c
+    return Path.cwd()
+
+
+def _resolve_ui_python(repo_root: Path) -> str:
+    env_py = (os.environ.get("CELESTIAL_TRIAGE_PYTHON") or "").strip()
+    if env_py:
+        return env_py
+    for rel in (".venv312/bin/python3", ".venv/bin/python3", ".venv/bin/python"):
+        p = repo_root / rel
+        if p.exists():
+            return str(p)
+    return "python3"
+
+
 class AnalystConsoleApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Celestial Triage — Mac Analyst Console")
         self.geometry("1480x920")
 
-        self.repo_root = Path(__file__).resolve().parents[3]
+        self.repo_root = _resolve_repo_root()
         self.db_path = self.repo_root / DB_PATH
         self.db = Database(self.db_path)
-        self.runner = SafeCliRunner()
+        self.runner = SafeCliRunner(_resolve_ui_python(self.repo_root))
 
         self.candidates: list[dict] = []
         self.selected_candidate_id: str | None = None
