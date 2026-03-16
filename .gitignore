@@ -4,11 +4,13 @@ __pycache__/
 *.so
 .pytest_cache/
 .venv/
+.venv312/
 venv/
 .env
 *.egg-info/
 build/
 dist/
+*.spec
 
 # Streamlit
 .streamlit/

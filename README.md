@@ -188,10 +188,22 @@ python3 -m celestial_triage.macapp.desktop
 
 > Note: some Python builds may not include `_tkinter` (for example `python@3.14` on this host during validation). Use the Tk-capable 3.12 runtime above if you see tkinter import errors.
 
-Launch:
+Launch (Python desktop mode):
 
 ```bash
 python3 -m celestial_triage.macapp.desktop
+```
+
+Package as a native macOS `.app` bundle (while keeping Python mode available):
+
+```bash
+./scripts/package_macos_app.sh
+```
+
+Expected output bundle:
+
+```bash
+dist/CelestialTriage.app
 ```
 
 ### UI layout
