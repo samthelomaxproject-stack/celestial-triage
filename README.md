@@ -42,6 +42,15 @@ This project ingests Rubin-style/broker alert-like data, normalizes detections i
 - **Normalize**: raw alerts → canonical detections
   - required normalized field contract is documented in `ingest/base.py` (`REQUIRED_NORMALIZED_FIELDS`)
 - **External-readiness**: includes a narrow isolated `JsonlExternalAdapter` scaffold for first real-source integration prep
+
+### JSONL input notes (external path)
+Preferred keys:
+- `source_id` (or fallback `objectId`)
+- `timestamp` (ISO8601 preferred)
+- `ra`/`dec` (or `ra_deg`/`dec_deg`)
+- optional brightness/motion/class fields (`mag`, `magpsf`, `moving`, `is_moving`, `class_label`, `confidence`, etc.)
+
+Records missing usable coordinates are skipped because they cannot be mapped into a normalized detection.
 - **Shared features**: computed once per candidate
 - **Detectors**: independent weighted rule modules
 - **Retention policy**: Tier 1/2/3/4 assignment
@@ -75,6 +84,18 @@ python -m celestial_triage.cli init-db
 ```bash
 python -m celestial_triage.cli seed-mock --count 200
 ```
+
+## Ingest external JSONL (first real-data path)
+```bash
+python -m celestial_triage.cli ingest-jsonl --input sample_data/example.jsonl
+```
+
+This path is schema-hardened for imperfect inputs:
+- malformed JSONL lines are skipped with warnings
+- missing source identifiers are skipped with warnings
+- partial records use fallback normalization where possible
+- unusable records (e.g., missing/invalid coordinates) are skipped
+
 
 ## Run pipeline
 ```bash

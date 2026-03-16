@@ -1,0 +1,8 @@
+{"raw_event_id":"ext-1","source_id":"EXT-001","timestamp":"2026-03-15T00:00:00+00:00","ra":33.12,"dec":-10.2,"mag":20.1,"mag_change":0.3,"moving":true,"class_label":"unknown","class_confidence":0.31,"catalog_match":"poor_match"}
+{"candid":"ext-2","objectId":"EXT-001","timestamp":"2026-03-15T00:45:00+00:00","ra_deg":33.5,"dec_deg":-10.0,"magpsf":19.8,"dmag":-0.3,"is_moving":"true","label":"unknown","confidence":0.28,"match_status":"no_match"}
+{"raw_event_id":"ext-3","source_id":"EXT-002","timestamp":"2026-03-15T01:20:00+00:00","ra":120.1,"dec":12.3,"magnitude":18.4,"magnitude_change":0.9,"moving_flag":1,"class_label":"asteroid","class_confidence":0.74,"catalog_match_status":"matched"}
+{"raw_event_id":"ext-4","source_id":"EXT-003","timestamp":"2026-03-15T03:10:00+00:00","dec":5.2,"mag":20.0,"moving":true}
+{"raw_event_id":"ext-5","source_id":"EXT-004","timestamp":"2026-03-15T03:40:00+00:00","ra":210.8,"dec":-5.5,"mag":"not_a_number","moving":"false","catalog_match":"matched"}
+{"raw_event_id":"ext-6","source_id":"EXT-004","timestamp":"bad-time-format","ra":211.2,"dec":-5.2,"mag":21.1,"moving":false}
+this is not json
+{"raw_event_id":"ext-7","timestamp":"2026-03-15T04:10:00+00:00","ra":11.2,"dec":22.5,"mag":20.1}

@@ -17,8 +17,9 @@ from celestial_triage.detectors import (
     unknown_mover_detector,
 )
 from celestial_triage.features.extractor import extract_shared_features
+from celestial_triage.ingest.external_jsonl import JsonlExternalAdapter
 from celestial_triage.ingest.mock_feed import MockFeedAdapter
-from celestial_triage.ingest.normalizer import normalize_event
+from celestial_triage.ingest.normalizer import normalize_event_safe
 from celestial_triage.models.entities import DetectorScore
 from celestial_triage.scoring.common import score_band
 from celestial_triage.scoring.evaluation import archetype_evaluation_report
@@ -50,21 +51,70 @@ def cmd_seed_mock(args: argparse.Namespace) -> None:
     feed = MockFeedAdapter(count=args.count)
     events = feed.fetch_events()
 
+    accepted = 0
+    skipped = 0
     for raw in events:
         db.insert_raw_event(raw)
-        det = normalize_event(raw)
+        det, warnings = normalize_event_safe(raw)
+        if det is None:
+            skipped += 1
+            LOGGER.warning("Skipping mock event %s: %s", raw.raw_event_id, ",".join(warnings))
+            continue
+        if warnings:
+            LOGGER.info("Normalized mock event %s with warnings: %s", raw.raw_event_id, ",".join(warnings))
         db.insert_detection(det)
+        accepted += 1
 
     n_candidates = db.rebuild_candidates_from_detections()
 
-    LOGGER.info("Seeded %d raw events, %d candidate groups", len(events), n_candidates)
+    LOGGER.info(
+        "Seeded %d raw events (%d accepted, %d skipped), %d candidate groups",
+        len(events),
+        accepted,
+        skipped,
+        n_candidates,
+    )
 
+
+def cmd_ingest_jsonl(args: argparse.Namespace) -> None:
+    db = Database(DB_PATH)
+    db.init()
+
+    adapter = JsonlExternalAdapter(path=Path(args.input), broker_name=args.broker)
+    events = adapter.fetch_events()
+    if not events:
+        LOGGER.warning("No ingestible events found in %s", args.input)
+        return
+
+    accepted = 0
+    skipped = 0
+    for raw in events:
+        db.insert_raw_event(raw)
+        det, warnings = normalize_event_safe(raw)
+        if det is None:
+            skipped += 1
+            LOGGER.warning("Skipping external record %s: %s", raw.raw_event_id, ",".join(warnings))
+            continue
+        if warnings:
+            LOGGER.info("External record %s normalized with warnings: %s", raw.raw_event_id, ",".join(warnings))
+        db.insert_detection(det)
+        accepted += 1
+
+    n_candidates = db.rebuild_candidates_from_detections()
+    LOGGER.info(
+        "Ingested JSONL %s (%d raw, %d accepted, %d skipped), %d candidates total",
+        args.input,
+        len(events),
+        accepted,
+        skipped,
+        n_candidates,
+    )
 
 def cmd_extract_features(args: argparse.Namespace) -> None:
     db = Database(DB_PATH)
     candidate_ids = db.list_candidate_ids()
     if not candidate_ids:
-        raise RuntimeError("No candidates found. Run `seed-mock` first.")
+        raise RuntimeError("No candidates found. Run `seed-mock` or `ingest-jsonl` first.")
 
     for cid in candidate_ids:
         dets = db.get_detections_for_candidate(cid)
@@ -77,7 +127,7 @@ def cmd_run_detectors(args: argparse.Namespace) -> None:
     db = Database(DB_PATH)
     candidate_ids = db.list_candidate_ids()
     if not candidate_ids:
-        raise RuntimeError("No candidates found. Run `seed-mock` first.")
+        raise RuntimeError("No candidates found. Run `seed-mock` or `ingest-jsonl` first.")
 
     for cid in candidate_ids:
         row = db.get_candidate_with_features(cid)
@@ -104,7 +154,7 @@ def cmd_assign_retention(args: argparse.Namespace) -> None:
     db = Database(DB_PATH)
     candidate_ids = db.list_candidate_ids()
     if not candidate_ids:
-        raise RuntimeError("No candidates found. Run `seed-mock` first.")
+        raise RuntimeError("No candidates found. Run `seed-mock` or `ingest-jsonl` first.")
 
     for cid in candidate_ids:
         summary = db.score_summary(cid)
@@ -175,6 +225,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("seed-mock", help="Seed mock broker events and normalized detections")
     p.add_argument("--count", type=int, default=120, help="Number of mock events to generate")
     p.set_defaults(func=cmd_seed_mock)
+
+    p = sub.add_parser("ingest-jsonl", help="Ingest external JSONL records into canonical detections")
+    p.add_argument("--input", required=True, help="Path to JSONL input file")
+    p.add_argument("--broker", default="external_jsonl", help="Broker/source name label")
+    p.set_defaults(func=cmd_ingest_jsonl)
 
     p = sub.add_parser("extract-features", help="Compute shared candidate features")
     p.set_defaults(func=cmd_extract_features)
