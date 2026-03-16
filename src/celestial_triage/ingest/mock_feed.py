@@ -7,25 +7,69 @@ from celestial_triage.models.entities import RawEvent
 
 
 class MockFeedAdapter(BrokerAdapter):
-    """Mock feed with archetypes to produce varied detector outcomes for demos/tests."""
+    """Mock feed with transparent scenario archetypes for detector validation demos."""
 
-    ARCHETYPES = ["satellite_like", "neo_like", "kbo_like", "iso_like", "anomaly_like", "mixed"]
+    ARCHETYPES = [
+        "inbound_interstellar_like",
+        "outbound_hyperbolic_like",
+        "slow_persistent_kbo_like",
+        "fast_satellite_like",
+        "neo_like",
+        "ambiguous_anomaly_like",
+    ]
 
     def __init__(self, count: int = 100, broker_name: str = "mock_broker") -> None:
         self.count = count
         self.broker_name = broker_name
 
     def _payload_for_archetype(self, archetype: str) -> dict:
-        if archetype == "satellite_like":
+        if archetype == "inbound_interstellar_like":
+            return {
+                "ra": random.uniform(0, 360),
+                "dec": random.uniform(-70, 70),
+                "mag": random.uniform(17, 22),
+                "mag_change": random.uniform(-1.2, -0.2),
+                "moving": True,
+                "class_label": "unknown",
+                "class_confidence": random.uniform(0.1, 0.4),
+                "catalog_match": random.choice(["no_match", "poor_match"]),
+                "mock_archetype_label": archetype,
+            }
+        if archetype == "outbound_hyperbolic_like":
+            return {
+                "ra": random.uniform(0, 360),
+                "dec": random.uniform(-70, 70),
+                "mag": random.uniform(16, 21),
+                "mag_change": random.uniform(0.3, 1.4),
+                "moving": True,
+                "class_label": "unknown",
+                "class_confidence": random.uniform(0.1, 0.5),
+                "catalog_match": random.choice(["poor_match", "no_match"]),
+                "mock_archetype_label": archetype,
+            }
+        if archetype == "slow_persistent_kbo_like":
+            return {
+                "ra": random.uniform(0, 360),
+                "dec": random.uniform(-20, 20),
+                "mag": random.uniform(21, 25),
+                "mag_change": random.uniform(-0.2, 0.2),
+                "moving": random.random() > 0.45,
+                "class_label": "unknown",
+                "class_confidence": random.uniform(0.35, 0.65),
+                "catalog_match": random.choice(["matched", "poor_match"]),
+                "mock_archetype_label": archetype,
+            }
+        if archetype == "fast_satellite_like":
             return {
                 "ra": random.uniform(0, 360),
                 "dec": random.uniform(-45, 45),
                 "mag": random.uniform(12, 18),
-                "mag_change": random.uniform(0.5, 2.0),
+                "mag_change": random.uniform(0.6, 2.2),
                 "moving": True,
                 "class_label": "artifact",
                 "class_confidence": random.uniform(0.1, 0.4),
                 "catalog_match": random.choice(["poor_match", "no_match"]),
+                "mock_archetype_label": archetype,
             }
         if archetype == "neo_like":
             return {
@@ -35,51 +79,20 @@ class MockFeedAdapter(BrokerAdapter):
                 "mag_change": random.uniform(0.2, 1.2),
                 "moving": True,
                 "class_label": "asteroid",
-                "class_confidence": random.uniform(0.4, 0.8),
+                "class_confidence": random.uniform(0.45, 0.85),
                 "catalog_match": random.choice(["matched", "poor_match"]),
-            }
-        if archetype == "kbo_like":
-            return {
-                "ra": random.uniform(0, 360),
-                "dec": random.uniform(-20, 20),
-                "mag": random.uniform(21, 25),
-                "mag_change": random.uniform(-0.3, 0.3),
-                "moving": random.random() > 0.35,
-                "class_label": "unknown",
-                "class_confidence": random.uniform(0.3, 0.6),
-                "catalog_match": random.choice(["matched", "poor_match"]),
-            }
-        if archetype == "iso_like":
-            return {
-                "ra": random.uniform(0, 360),
-                "dec": random.uniform(-70, 70),
-                "mag": random.uniform(17, 23),
-                "mag_change": random.uniform(0.8, 2.5),
-                "moving": True,
-                "class_label": "unknown",
-                "class_confidence": random.uniform(0.1, 0.5),
-                "catalog_match": random.choice(["poor_match", "no_match"]),
-            }
-        if archetype == "anomaly_like":
-            return {
-                "ra": random.uniform(0, 360),
-                "dec": random.uniform(-90, 90),
-                "mag": random.uniform(15, 24),
-                "mag_change": random.uniform(-2.5, 2.5),
-                "moving": random.random() > 0.5,
-                "class_label": random.choice(["unknown", "variable"]),
-                "class_confidence": random.uniform(0.0, 0.35),
-                "catalog_match": random.choice(["matched", "poor_match", "no_match"]),
+                "mock_archetype_label": archetype,
             }
         return {
             "ra": random.uniform(0, 360),
             "dec": random.uniform(-90, 90),
-            "mag": random.uniform(14, 24),
-            "mag_change": random.uniform(-1.5, 1.5),
-            "moving": random.random() > 0.55,
-            "class_label": random.choice(["unknown", "asteroid", "variable", "artifact"]),
-            "class_confidence": random.random(),
+            "mag": random.uniform(15, 24),
+            "mag_change": random.uniform(-2.5, 2.5),
+            "moving": random.random() > 0.5,
+            "class_label": random.choice(["unknown", "variable"]),
+            "class_confidence": random.uniform(0.0, 0.35),
             "catalog_match": random.choice(["matched", "poor_match", "no_match"]),
+            "mock_archetype_label": archetype,
         }
 
     def fetch_events(self) -> list[RawEvent]:

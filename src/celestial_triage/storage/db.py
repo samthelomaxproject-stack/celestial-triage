@@ -52,6 +52,14 @@ class Database:
             for col, col_type in required_cols.items():
                 if col not in existing_cols:
                     c.execute(f"ALTER TABLE shared_features ADD COLUMN {col} {col_type}")
+
+            det_cols = {r[1] for r in c.execute("PRAGMA table_info(detections)").fetchall()}
+            if "mock_archetype_label" not in det_cols:
+                c.execute("ALTER TABLE detections ADD COLUMN mock_archetype_label TEXT")
+
+            cand_cols = {r[1] for r in c.execute("PRAGMA table_info(candidates)").fetchall()}
+            if "mock_archetype_label" not in cand_cols:
+                c.execute("ALTER TABLE candidates ADD COLUMN mock_archetype_label TEXT")
             c.commit()
 
     def insert_raw_event(self, raw: RawEvent) -> None:
@@ -78,8 +86,9 @@ class Database:
                 """
                 INSERT OR REPLACE INTO detections
                 (detection_id, source_id, broker_name, timestamp, ra, dec, magnitude, magnitude_change,
-                 moving_flag, class_label, class_confidence, catalog_match_status, raw_payload_reference, ingest_time)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 moving_flag, class_label, class_confidence, catalog_match_status, raw_payload_reference, ingest_time,
+                 mock_archetype_label)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     d.detection_id,
@@ -96,6 +105,7 @@ class Database:
                     d.catalog_match_status,
                     d.raw_payload_reference,
                     d.ingest_time.isoformat(),
+                    d.mock_archetype_label,
                 ),
             )
             c.commit()
@@ -129,12 +139,16 @@ class Database:
             avg_ra = sum(r["ra"] for r in rows) / det_count
             avg_dec = sum(r["dec"] for r in rows) / det_count
 
+            # Use dominant archetype label for demo/testing visibility.
+            labels = [str(r["mock_archetype_label"] or "") for r in rows if r["mock_archetype_label"]]
+            archetype = max(set(labels), key=labels.count) if labels else ""
+
             c.execute(
                 """
                 INSERT OR REPLACE INTO candidates
                 (candidate_id, source_id, first_seen, last_seen, detection_count, average_ra, average_dec,
-                 current_status, review_status, tags, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT tags FROM candidates WHERE candidate_id=?), ''),
+                 current_status, review_status, mock_archetype_label, tags, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT tags FROM candidates WHERE candidate_id=?), ''),
                         COALESCE((SELECT notes FROM candidates WHERE candidate_id=?), ''))
                 """,
                 (
@@ -147,6 +161,7 @@ class Database:
                     avg_dec,
                     "active",
                     "unreviewed",
+                    archetype,
                     candidate_id,
                     candidate_id,
                 ),

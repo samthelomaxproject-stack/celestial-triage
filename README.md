@@ -13,6 +13,8 @@ This project ingests Rubin-style/broker alert-like data, normalizes detections i
 - Candidate grouping/track building and shared feature extraction
 - Motion analysis upgrades (motion rate, consistency, heading/direction placeholders)
 - Orbit-fit scaffolding (orbit_fit_quality, eccentricity_placeholder, hyperbolic_likelihood, inbound/outbound placeholder)
+- Scenario realism with explicit mock archetypes (inbound/outbound ISO-like, KBO-like, NEO-like, satellite-like, anomaly-like)
+- Scenario evaluation helper for detector/archetype alignment insights
 - Six detector modules with transparent scoring + reasons using candidate-level aggregates (span, trend, motion, orbit placeholders)
 - Score persistence in SQLite
 - Retention tier assignment (`hot`, `warm`, `cold`, `disposable`)
@@ -38,6 +40,8 @@ This project ingests Rubin-style/broker alert-like data, normalizes detections i
 ## Architecture overview
 - **Ingest**: broker-agnostic adapter interface + mock feed
 - **Normalize**: raw alerts → canonical detections
+  - required normalized field contract is documented in `ingest/base.py` (`REQUIRED_NORMALIZED_FIELDS`)
+- **External-readiness**: includes a narrow isolated `JsonlExternalAdapter` scaffold for first real-source integration prep
 - **Shared features**: computed once per candidate
 - **Detectors**: independent weighted rule modules
 - **Retention policy**: Tier 1/2/3/4 assignment
@@ -75,6 +79,11 @@ python -m celestial_triage.cli seed-mock --count 200
 ## Run pipeline
 ```bash
 python -m celestial_triage.cli run-pipeline
+```
+
+## Scenario evaluation report (dev/demo)
+```bash
+python -m celestial_triage.cli scenario-report
 ```
 
 ## List top candidates

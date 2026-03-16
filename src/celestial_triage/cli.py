@@ -21,6 +21,7 @@ from celestial_triage.ingest.mock_feed import MockFeedAdapter
 from celestial_triage.ingest.normalizer import normalize_event
 from celestial_triage.models.entities import DetectorScore
 from celestial_triage.scoring.common import score_band
+from celestial_triage.scoring.evaluation import archetype_evaluation_report
 from celestial_triage.storage.db import Database
 from celestial_triage.storage.retention import assign_retention_tier
 from celestial_triage.utils.logging import get_logger
@@ -151,6 +152,12 @@ def cmd_pipeline(args: argparse.Namespace) -> None:
     cmd_assign_retention(args)
 
 
+def cmd_scenario_report(args: argparse.Namespace) -> None:
+    db = Database(DB_PATH)
+    report = archetype_evaluation_report(db)
+    print(json.dumps(report, indent=2))
+
+
 def cmd_launch_ui(args: argparse.Namespace) -> None:
     subprocess.run(["streamlit", "run", "src/celestial_triage/ui/dashboard.py"], check=False)
 
@@ -188,6 +195,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--export", choices=["csv", "json"], default=None, help="Optional export format")
     p.add_argument("--output", type=str, default=None, help="Export file path")
     p.set_defaults(func=cmd_top)
+
+    p = sub.add_parser("scenario-report", help="Summarize mock archetype vs detector outcomes")
+    p.set_defaults(func=cmd_scenario_report)
 
     p = sub.add_parser("launch-ui", help="Launch Streamlit dashboard")
     p.set_defaults(func=cmd_launch_ui)

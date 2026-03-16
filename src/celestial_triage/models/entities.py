@@ -28,6 +28,7 @@ class NormalizedDetection:
     catalog_match_status: str
     raw_payload_reference: str
     ingest_time: datetime
+    mock_archetype_label: str = ""
 
 
 @dataclass

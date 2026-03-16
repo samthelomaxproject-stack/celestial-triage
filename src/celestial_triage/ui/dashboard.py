@@ -92,6 +92,8 @@ if candidate_id:
     with c1:
         st.markdown("### Candidate")
         st.json(dict(cand) if cand else {})
+        if cand and cand.get("mock_archetype_label"):
+            st.info(f"Demo-only mock archetype label: {cand['mock_archetype_label']}")
 
         st.markdown("### Retention tier")
         if retention:

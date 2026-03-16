@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS detections (
   class_confidence REAL NOT NULL,
   catalog_match_status TEXT NOT NULL,
   raw_payload_reference TEXT NOT NULL,
-  ingest_time TEXT NOT NULL
+  ingest_time TEXT NOT NULL,
+  mock_archetype_label TEXT
 );
 
 CREATE TABLE IF NOT EXISTS candidates (
@@ -35,6 +36,7 @@ CREATE TABLE IF NOT EXISTS candidates (
   average_dec REAL NOT NULL,
   current_status TEXT NOT NULL,
   review_status TEXT NOT NULL,
+  mock_archetype_label TEXT,
   tags TEXT,
   notes TEXT
 );

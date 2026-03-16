@@ -21,4 +21,5 @@ def normalize_event(raw: RawEvent) -> NormalizedDetection:
         catalog_match_status=str(p.get("catalog_match", "no_match")),
         raw_payload_reference=raw.raw_event_id,
         ingest_time=datetime.now(timezone.utc),
+        mock_archetype_label=str(p.get("mock_archetype_label", "")),
     )
