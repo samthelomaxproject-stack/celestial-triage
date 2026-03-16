@@ -213,7 +213,13 @@ class Database:
                 """
                 SELECT * FROM image_assets
                 WHERE candidate_id=?
-                ORDER BY CASE kind WHEN 'science' THEN 1 WHEN 'reference' THEN 2 WHEN 'difference' THEN 3 ELSE 9 END,
+                ORDER BY CASE kind
+                    WHEN 'science' THEN 1
+                    WHEN 'reference' THEN 2
+                    WHEN 'difference' THEN 3
+                    WHEN 'survey_context_panstarrs' THEN 4
+                    WHEN 'survey_context_skyview' THEN 5
+                    ELSE 9 END,
                          created_at DESC
                 """,
                 (candidate_id,),
@@ -439,6 +445,13 @@ class Database:
             rows = c.execute("SELECT candidate_id FROM candidates").fetchall()
         return [r[0] for r in rows]
 
+    def list_candidates_brief(self) -> list[dict[str, Any]]:
+        with self.conn() as c:
+            rows = c.execute(
+                "SELECT candidate_id, source_id, average_ra, average_dec FROM candidates"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def get_candidate_id_for_source(self, source_id: str) -> str | None:
         with self.conn() as c:
             row = c.execute("SELECT candidate_id FROM candidates WHERE source_id=?", (source_id,)).fetchone()
@@ -471,6 +484,21 @@ class Database:
             row = c.execute(
                 "SELECT * FROM detections WHERE source_id=? ORDER BY timestamp DESC LIMIT 1",
                 (source_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def get_latest_detection_for_candidate(self, candidate_id: str) -> dict[str, Any] | None:
+        with self.conn() as c:
+            row = c.execute(
+                """
+                SELECT d.*
+                FROM detections d
+                JOIN candidate_detections cd ON cd.detection_id=d.detection_id
+                WHERE cd.candidate_id=?
+                ORDER BY d.timestamp DESC
+                LIMIT 1
+                """,
+                (candidate_id,),
             ).fetchone()
         return dict(row) if row else None
 

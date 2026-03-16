@@ -22,6 +22,7 @@ from celestial_triage.ingest.image_assets import extract_image_assets_from_paylo
 from celestial_triage.ingest.image_preview import render_preview_png
 from celestial_triage.ingest.lasair_api import LasairApiAdapter
 from celestial_triage.ingest.lasair_presets import PRESETS, resolve_preset
+from celestial_triage.ingest.survey_cutouts import ensure_layered_survey_images
 from celestial_triage.ingest.mock_feed import MockFeedAdapter
 from celestial_triage.ingest.normalizer import normalize_event_safe
 from celestial_triage.models.entities import DetectorScore
@@ -200,6 +201,65 @@ def _fetch_and_link_lasair_cutouts(db: Database, adapter: LasairApiAdapter, sour
     }
 
 
+def _link_layered_survey_context_images(db: Database) -> dict[str, int]:
+    checked = 0
+    pan_ok = 0
+    sky_ok = 0
+    failures = 0
+
+    for cand in db.list_candidates_brief():
+        cid = str(cand["candidate_id"])
+        source_id = str(cand["source_id"])
+        ra = float(cand.get("average_ra") or 0.0)
+        dec = float(cand.get("average_dec") or 0.0)
+        if not (-360.0 <= ra <= 360.0 and -90.0 <= dec <= 90.0):
+            continue
+
+        checked += 1
+        existing = {img.get("kind") for img in db.get_images_for_candidate(cid)}
+        det = db.get_latest_detection_for_candidate(cid)
+        if not det:
+            continue
+
+        out = ensure_layered_survey_images(cid, source_id, ra, dec, existing_kinds={str(k) for k in existing if k})
+        if out.get("panstarrs"):
+            p = out["panstarrs"]
+            db.upsert_image_asset(
+                detection_id=det["detection_id"],
+                source_id=source_id,
+                broker_name="panstarrs",
+                kind="survey_context_panstarrs",
+                remote_url=str(p["remote_url"]),
+                local_path=str(p["local_path"]),
+                source_field="survey_context",
+                metadata={"service": "panstarrs", "ra": ra, "dec": dec},
+            )
+            pan_ok += 1
+        elif out.get("skyview"):
+            s = out["skyview"]
+            db.upsert_image_asset(
+                detection_id=det["detection_id"],
+                source_id=source_id,
+                broker_name="skyview",
+                kind="survey_context_skyview",
+                remote_url=str(s["remote_url"]),
+                local_path=str(s["local_path"]),
+                source_field="survey_context",
+                metadata={"service": "skyview", "ra": ra, "dec": dec},
+            )
+            sky_ok += 1
+        else:
+            failures += 1
+
+    db.relink_image_assets_to_candidates()
+    return {
+        "candidates_checked": checked,
+        "panstarrs_context_added": pan_ok,
+        "skyview_context_added": sky_ok,
+        "context_unavailable": failures,
+    }
+
+
 def cmd_ingest_lasair(args: argparse.Namespace) -> None:
     db = Database(DB_PATH)
     db.init()
@@ -269,6 +329,10 @@ def cmd_ingest_lasair(args: argparse.Namespace) -> None:
     if args.fetch_cutouts:
         cutout_summary = _fetch_and_link_lasair_cutouts(db, adapter, accepted_source_ids)
 
+    survey_summary: dict[str, int] | None = None
+    if not getattr(args, "skip_survey_images", False):
+        survey_summary = _link_layered_survey_context_images(db)
+
     top_scores = db.top_candidates(limit=20)
     detector_hits: dict[str, int] = {}
     priority_hits: dict[str, int] = {}
@@ -297,6 +361,8 @@ def cmd_ingest_lasair(args: argparse.Namespace) -> None:
     LOGGER.info("Top follow-up priorities (sampled): %s", priority_hits)
     if cutout_summary is not None:
         LOGGER.info("Cutout retrieval summary: %s", cutout_summary)
+    if survey_summary is not None:
+        LOGGER.info("Survey image summary: %s", survey_summary)
 
 def cmd_extract_features(args: argparse.Namespace) -> None:
     db = Database(DB_PATH)
@@ -406,6 +472,10 @@ def cmd_pipeline(args: argparse.Namespace) -> None:
     cmd_extract_features(args)
     cmd_run_detectors(args)
     cmd_assign_retention(args)
+    if getattr(args, "fetch_survey_images", False):
+        db = Database(DB_PATH)
+        summary = _link_layered_survey_context_images(db)
+        LOGGER.info("Survey image summary: %s", summary)
 
 
 def cmd_scenario_report(args: argparse.Namespace) -> None:
@@ -709,6 +779,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tables", type=str, default="", help="LSST mode FROM tables")
     p.add_argument("--conditions", type=str, default="", help="LSST mode WHERE conditions")
     p.add_argument("--fetch-cutouts", action="store_true", help="Fetch object detail/cutout references after ingest")
+    p.add_argument("--skip-survey-images", action="store_true", help="Skip layered Pan-STARRS/SkyView survey context retrieval")
     p.add_argument("--token", type=str, default=None, help="Optional Lasair token (or use LASAIR_API_TOKEN env)")
     p.set_defaults(func=cmd_ingest_lasair)
 
@@ -722,6 +793,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_assign_retention)
 
     p = sub.add_parser("run-pipeline", help="Run extract-features + run-detectors + assign-retention")
+    p.add_argument("--fetch-survey-images", action="store_true", help="Also fetch layered survey context images")
     p.set_defaults(func=cmd_pipeline)
 
     p = sub.add_parser("top-candidates", help="List top ranked candidates")

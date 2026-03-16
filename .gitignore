@@ -11,6 +11,7 @@ venv/
 build/
 dist/
 *.spec
+image_previews/
 
 # Streamlit
 .streamlit/

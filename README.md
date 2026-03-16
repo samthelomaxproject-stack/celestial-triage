@@ -249,22 +249,43 @@ Image references discovered in broker payloads are stored in `image_assets` and 
 - status: `fetch_status`, `error_message`
 - metadata: `metadata_json`
 
-### UI behavior
+### Layered imaging strategy
 
-When payloads contain cutout/image links, the Mac UI image panel shows them and can open source URLs.
+Celestial Triage now uses layered image sourcing in this priority order:
 
-`ingest-lasair --fetch-cutouts` adds a follow-on detail lookup pass for ingested objects, attempts to discover image references from object-detail responses, and stores them in `image_assets`.
+1. **Broker cutouts** (`science`, `reference`, `difference`) when available
+2. **Pan-STARRS survey context** (`survey_context_panstarrs`)
+3. **SkyView DSS fallback** (`survey_context_skyview`) when Pan-STARRS is unavailable
+
+`ingest-lasair --fetch-cutouts` performs broker detail lookup for image/cutout references.
+Survey context retrieval is layered and non-fatal: if one source fails, ingest continues.
+
+### Preview generation + storage
 
 When embedded/base64 cutout payloads are present, Celestial Triage attempts to decode and render local PNG previews automatically.
+Survey context images are also saved locally as PNG.
 
 Preview storage location:
-- default: `./image_previews/<source_id>/...png`
+- default: `./image_previews/<candidate_id>/...png`
 - override with env: `CELESTIAL_TRIAGE_PREVIEW_DIR`
 
+Typical files:
+- `image_previews/<candidate_id>/survey_context_panstarrs.png`
+- `image_previews/<candidate_id>/survey_context_skyview.png`
+
+### Mac app image panel behavior
+
+The Mac app image panel:
+- shows broker image assets first when available
+- shows Pan-STARRS context image when available
+- shows SkyView DSS fallback when Pan-STARRS is unavailable
+- prefers local preview PNGs for in-app display
+- falls back to opening remote URLs when only remote links exist
+
 Current limitations:
-- minimal LSST query fields (for example `diaObjectId, ra, decl`) may not include cutout URLs or embedded stamps directly.
-- object-detail endpoint/shape differs by broker/domain; some objects will return no image/cutout references.
-- embedded FITS-like payload support depends on payload shape; binary FITS decoding is best-effort.
+- LSST object payload/detail paths may not include broker cutout URLs or embedded stamp data for many objects.
+- Pan-STARRS does not cover all sky locations; some Rubin/LSST candidates may be out of coverage.
+- SkyView response behavior can vary (direct image vs HTML link flow).
 - cutout lookup/render failures do not fail primary ingest; they are logged and skipped.
 
 ---
