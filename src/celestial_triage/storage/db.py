@@ -67,6 +67,28 @@ class Database:
             review_cols = {r[1] for r in c.execute("PRAGMA table_info(reviews)").fetchall()}
             if "review_state" not in review_cols:
                 c.execute("ALTER TABLE reviews ADD COLUMN review_state TEXT")
+
+            # image_assets table migration support for existing DBs.
+            image_cols = {r[1] for r in c.execute("PRAGMA table_info(image_assets)").fetchall()}
+            if image_cols:
+                required_image_cols = {
+                    "detection_id": "TEXT",
+                    "candidate_id": "TEXT",
+                    "source_id": "TEXT",
+                    "kind": "TEXT",
+                    "broker_name": "TEXT",
+                    "source_field": "TEXT",
+                    "remote_url": "TEXT",
+                    "local_path": "TEXT",
+                    "fetch_status": "TEXT",
+                    "error_message": "TEXT",
+                    "metadata_json": "TEXT",
+                    "created_at": "TEXT",
+                    "updated_at": "TEXT",
+                }
+                for col, col_type in required_image_cols.items():
+                    if col not in image_cols:
+                        c.execute(f"ALTER TABLE image_assets ADD COLUMN {col} {col_type}")
             c.commit()
 
     def insert_raw_event(self, raw: RawEvent) -> None:
@@ -116,6 +138,95 @@ class Database:
                 ),
             )
             c.commit()
+
+    def upsert_image_asset(
+        self,
+        detection_id: str,
+        source_id: str,
+        broker_name: str,
+        kind: str,
+        remote_url: str,
+        source_field: str = "",
+        metadata: dict[str, Any] | None = None,
+        fetch_status: str = "linked",
+        local_path: str | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        image_id = str(uuid.uuid4())
+        with self.conn() as c:
+            row = c.execute(
+                "SELECT image_id FROM image_assets WHERE detection_id=? AND kind=? AND remote_url=?",
+                (detection_id, kind, remote_url),
+            ).fetchone()
+            if row:
+                image_id = row["image_id"]
+            c.execute(
+                """
+                INSERT OR REPLACE INTO image_assets
+                (image_id, detection_id, candidate_id, source_id, kind, broker_name, source_field,
+                 remote_url, local_path, fetch_status, error_message, metadata_json, created_at, updated_at)
+                VALUES
+                (?, ?, COALESCE((SELECT candidate_id FROM image_assets WHERE image_id=?), NULL), ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                 COALESCE((SELECT created_at FROM image_assets WHERE image_id=?), ?), ?)
+                """,
+                (
+                    image_id,
+                    detection_id,
+                    image_id,
+                    source_id,
+                    kind,
+                    broker_name,
+                    source_field,
+                    remote_url,
+                    local_path,
+                    fetch_status,
+                    error_message,
+                    json.dumps(metadata or {}),
+                    image_id,
+                    now_iso(),
+                    now_iso(),
+                ),
+            )
+            c.commit()
+
+    def relink_image_assets_to_candidates(self) -> None:
+        with self.conn() as c:
+            c.execute(
+                """
+                UPDATE image_assets
+                SET candidate_id = (
+                    SELECT cd.candidate_id
+                    FROM candidate_detections cd
+                    WHERE cd.detection_id = image_assets.detection_id
+                    LIMIT 1
+                ),
+                updated_at = ?
+                WHERE detection_id IS NOT NULL
+                """,
+                (now_iso(),),
+            )
+            c.commit()
+
+    def get_images_for_candidate(self, candidate_id: str) -> list[dict[str, Any]]:
+        with self.conn() as c:
+            rows = c.execute(
+                """
+                SELECT * FROM image_assets
+                WHERE candidate_id=?
+                ORDER BY CASE kind WHEN 'science' THEN 1 WHEN 'reference' THEN 2 WHEN 'difference' THEN 3 ELSE 9 END,
+                         created_at DESC
+                """,
+                (candidate_id,),
+            ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["metadata"] = json.loads(d.get("metadata_json") or "{}")
+            except Exception:
+                d["metadata"] = {}
+            out.append(d)
+        return out
 
     def rebuild_candidates_from_detections(self) -> int:
         """Rebuild/refresh candidate summaries and linkage from all detections."""

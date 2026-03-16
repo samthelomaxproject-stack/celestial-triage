@@ -230,6 +230,61 @@ python -m celestial_triage.cli launch-ui
 streamlit run src/celestial_triage/ui/dashboard.py
 ```
 
+## Mac Analyst Console (desktop path)
+A Mac-focused desktop console now lives at:
+- `src/celestial_triage/macapp/desktop.py`
+
+Run it:
+```bash
+python -m celestial_triage.macapp.desktop
+```
+
+### Architecture
+- Backend remains authoritative in CLI + storage layers.
+- Desktop UI reads candidate/detection/score/review/image data from SQLite.
+- Desktop actions execute **only** approved CLI commands via a safe mapping layer:
+  - `src/celestial_triage/macapp/runner.py`
+- No free-form shell execution from UI.
+
+### Approved CLI actions in desktop app
+- `init-db`
+- `seed-mock`
+- `ingest-jsonl`
+- `ingest-lasair`
+- `run-pipeline`
+- `top-candidates`
+- `scenario-report`
+- `update-review`
+- `followup-report`
+- `export-candidates`
+- `bundle-cases`
+
+### Desktop data surfaced
+- candidate queue/list + review filters
+- candidate detail + features
+- detector scores
+- interpretation/conflict summary
+- follow-up priority
+- review state/tags/notes
+- provenance + timeline count/summary
+- trajectory summary
+- image panel grouped by kind (science/reference/difference) when image links exist
+
+## Image asset linkage
+Image/cutout references are extracted during ingest (when present in broker payloads) and persisted in `image_assets`.
+Fields include:
+- `kind` (`science` / `reference` / `difference`)
+- `remote_url`
+- `source_field`
+- linkage to detection and candidate
+
+Current behavior:
+- link discovery + persistence are implemented
+- candidate linkage is maintained post-ingest
+- panel displays linked assets and can open source URL
+
+If a broker/source path does not expose cutout URLs in its payload, records simply contain no image links until those endpoints/fields are added.
+
 ## One-command smoke test
 ```bash
 ./scripts/smoke_test.sh

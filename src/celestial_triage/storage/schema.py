@@ -107,4 +107,22 @@ CREATE TABLE IF NOT EXISTS archive_policies (
   rationale TEXT NOT NULL,
   decided_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS image_assets (
+  image_id TEXT PRIMARY KEY,
+  detection_id TEXT,
+  candidate_id TEXT,
+  source_id TEXT,
+  kind TEXT NOT NULL,
+  broker_name TEXT,
+  source_field TEXT,
+  remote_url TEXT NOT NULL,
+  local_path TEXT,
+  fetch_status TEXT NOT NULL,
+  error_message TEXT,
+  metadata_json TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(detection_id, kind, remote_url)
+);
 """

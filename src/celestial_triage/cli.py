@@ -18,6 +18,7 @@ from celestial_triage.detectors import (
 )
 from celestial_triage.features.extractor import extract_shared_features
 from celestial_triage.ingest.external_jsonl import JsonlExternalAdapter
+from celestial_triage.ingest.image_assets import extract_image_assets_from_payload
 from celestial_triage.ingest.lasair_api import LasairApiAdapter
 from celestial_triage.ingest.lasair_presets import PRESETS, resolve_preset
 from celestial_triage.ingest.mock_feed import MockFeedAdapter
@@ -52,6 +53,7 @@ def cmd_init_db(args: argparse.Namespace) -> None:
 def _ingest_raw_events(db: Database, events: list, label: str) -> tuple[int, int, int]:
     accepted = 0
     skipped = 0
+    linked_images = 0
     for raw in events:
         db.insert_raw_event(raw)
         det, warnings = normalize_event_safe(raw)
@@ -64,7 +66,23 @@ def _ingest_raw_events(db: Database, events: list, label: str) -> tuple[int, int
         db.insert_detection(det)
         accepted += 1
 
+        image_refs = extract_image_assets_from_payload(raw.payload)
+        for item in image_refs:
+            db.upsert_image_asset(
+                detection_id=det.detection_id,
+                source_id=det.source_id,
+                broker_name=det.broker_name,
+                kind=item["kind"],
+                remote_url=item["url"],
+                source_field=item.get("source_field", ""),
+                metadata=item.get("metadata", {}),
+            )
+            linked_images += 1
+
     n_candidates = db.rebuild_candidates_from_detections()
+    db.relink_image_assets_to_candidates()
+    if linked_images:
+        LOGGER.info("Linked %d image assets during %s ingest", linked_images, label)
     return accepted, skipped, n_candidates
 
 
