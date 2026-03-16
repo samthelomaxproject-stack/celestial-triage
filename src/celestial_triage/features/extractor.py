@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from math import sqrt
 
 from celestial_triage.features.orbit import compute_orbit_scaffold_features, heading_deg
@@ -12,14 +12,21 @@ def _clamp(v: float, lo: float = 0.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, v))
 
 
+def _parse_ts(ts: str) -> datetime:
+    dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 def extract_shared_features(detections: list[dict]) -> dict:
     if not detections:
         return {}
 
     detections = sorted(detections, key=lambda d: d["timestamp"])
 
-    t0 = datetime.fromisoformat(detections[0]["timestamp"])
-    t1 = datetime.fromisoformat(detections[-1]["timestamp"])
+    t0 = _parse_ts(detections[0]["timestamp"])
+    t1 = _parse_ts(detections[-1]["timestamp"])
     span_h = max(0.0, (t1 - t0).total_seconds() / 3600.0)
 
     mags = [float(d["magnitude"]) for d in detections]
