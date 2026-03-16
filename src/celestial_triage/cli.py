@@ -110,24 +110,55 @@ def cmd_ingest_lasair(args: argparse.Namespace) -> None:
     db = Database(DB_PATH)
     db.init()
 
+    lasair_mode = (args.lasair_mode or "ztf").strip().lower()
     query = args.query or "objectId:*"
     limit = args.limit if args.limit is not None else 100
     days_back = args.days_back if args.days_back is not None else 3
+    selected = (args.selected or "").strip()
+    tables = (args.tables or "").strip()
+    conditions = (args.conditions or "").strip()
+
     preset_name = args.preset
     preset = resolve_preset(preset_name)
     if preset:
         query = preset.query if not args.query else args.query
         limit = preset.limit if args.limit is None else args.limit
         days_back = preset.days_back if args.days_back is None else args.days_back
+        if lasair_mode == "ztf":
+            LOGGER.info(
+                "Using Lasair preset '%s' (query=%s, days_back=%d, limit=%d)",
+                preset.name,
+                query,
+                days_back,
+                limit,
+            )
+
+    if lasair_mode == "lsst" and not (selected and tables and conditions):
+        if not selected:
+            selected = "diaObjectId, ra, decl"
+        if not tables:
+            tables = "objects"
+        if not conditions:
+            conditions = "1=1"
         LOGGER.info(
-            "Using Lasair preset '%s' (query=%s, days_back=%d, limit=%d)",
-            preset.name,
-            query,
-            days_back,
+            "Using LSST Lasair mode (selected=%s, tables=%s, conditions=%s, limit=%d)",
+            selected,
+            tables,
+            conditions,
             limit,
         )
 
-    adapter = LasairApiAdapter(token=args.token, query=query, limit=limit, days_back=days_back)
+    adapter = LasairApiAdapter(
+        token=args.token,
+        query=query,
+        limit=limit,
+        days_back=days_back,
+        base_url=args.base_url,
+        lasair_mode=lasair_mode,
+        selected=selected,
+        tables=tables,
+        conditions=conditions,
+    )
     events = adapter.fetch_events()
     if not events:
         LOGGER.warning("No ingestible Lasair events returned")
@@ -569,9 +600,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("ingest-lasair", help="Ingest live Lasair API records")
     p.add_argument("--preset", choices=sorted(PRESETS.keys()), default=None, help="Optional query preset")
+    p.add_argument("--lasair-mode", choices=["ztf", "lsst"], default="ztf", help="Lasair broker request mode")
+    p.add_argument("--base-url", type=str, default=None, help="Lasair API base URL (or use LASAIR_API_BASE_URL env)")
     p.add_argument("--limit", type=int, default=None, help="Max records to request")
-    p.add_argument("--query", type=str, default="", help="Lasair query string (overrides preset query)")
-    p.add_argument("--days-back", type=int, default=None, help="Lookback window in days")
+    p.add_argument("--query", type=str, default="", help="Lasair query string for ztf mode (overrides preset query)")
+    p.add_argument("--days-back", type=int, default=None, help="Lookback window in days for ztf mode")
+    p.add_argument("--selected", type=str, default="", help="LSST mode SELECT list")
+    p.add_argument("--tables", type=str, default="", help="LSST mode FROM tables")
+    p.add_argument("--conditions", type=str, default="", help="LSST mode WHERE conditions")
     p.add_argument("--token", type=str, default=None, help="Optional Lasair token (or use LASAIR_API_TOKEN env)")
     p.set_defaults(func=cmd_ingest_lasair)
 

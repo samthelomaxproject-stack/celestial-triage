@@ -16,6 +16,30 @@ def test_cli_preset_argument_mapping():
     assert args.cmd == "ingest-lasair"
 
 
+def test_cli_lasair_mode_and_base_url_arguments():
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "ingest-lasair",
+            "--lasair-mode",
+            "lsst",
+            "--base-url",
+            "https://lasair.lsst.ac.uk/api",
+            "--selected",
+            "diaObjectId, ra, decl",
+            "--tables",
+            "objects",
+            "--conditions",
+            "1=1",
+        ]
+    )
+    assert args.lasair_mode == "lsst"
+    assert args.base_url == "https://lasair.lsst.ac.uk/api"
+    assert args.selected == "diaObjectId, ra, decl"
+    assert args.tables == "objects"
+    assert args.conditions == "1=1"
+
+
 def test_presets_exist_for_required_categories():
     required = {"fast_movers", "iso_candidates", "poor_catalog_matches", "bright_followup", "ambiguous_movers"}
     assert required.issubset(set(PRESETS.keys()))

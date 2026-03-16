@@ -38,7 +38,7 @@ def normalize_event_safe(raw: RawEvent) -> Tuple[Optional[NormalizedDetection], 
     warnings: list[str] = []
 
     ra = _as_float(p.get("ra", p.get("ra_deg")), default=float("nan"))
-    dec = _as_float(p.get("dec", p.get("dec_deg")), default=float("nan"))
+    dec = _as_float(p.get("dec", p.get("decl", p.get("dec_deg"))), default=float("nan"))
     if ra != ra or dec != dec:  # NaN check
         warnings.append("missing_or_invalid_coordinates")
         return None, warnings

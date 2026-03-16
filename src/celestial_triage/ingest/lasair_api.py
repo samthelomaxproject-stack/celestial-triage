@@ -14,6 +14,10 @@ LOGGER = get_logger("lasair_api")
 class LasairApiAdapter(BrokerAdapter):
     """Minimal Lasair REST adapter.
 
+    Supports two query modes:
+    - ztf: query-string style payload (``{"query": "..."}``)
+    - lsst: selected/tables/conditions payload
+
     Notes:
     - Keeps architecture broker-agnostic by returning RawEvent only.
     - Uses tolerant field extraction to support changing payload variants.
@@ -25,13 +29,25 @@ class LasairApiAdapter(BrokerAdapter):
         query: str = "objectId:*",
         limit: int = 100,
         days_back: int = 3,
-        base_url: str = "https://lasair-ztf.lsst.ac.uk/api",
+        base_url: str | None = None,
+        lasair_mode: str = "ztf",
+        selected: str = "",
+        tables: str = "",
+        conditions: str = "",
     ) -> None:
         self.token = token or os.getenv("LASAIR_API_TOKEN", "")
         self.query = query
         self.limit = max(1, min(1000, int(limit)))
         self.days_back = max(1, min(30, int(days_back)))
-        self.base_url = base_url.rstrip("/")
+        env_base_url = os.getenv("LASAIR_API_BASE_URL", "").strip()
+        resolved_base = base_url or env_base_url or "https://lasair-ztf.lsst.ac.uk/api"
+        self.base_url = resolved_base.rstrip("/")
+        self.lasair_mode = (lasair_mode or "ztf").strip().lower()
+        if self.lasair_mode not in {"ztf", "lsst"}:
+            raise ValueError("lasair_mode must be one of: ztf, lsst")
+        self.selected = selected.strip()
+        self.tables = tables.strip()
+        self.conditions = conditions.strip()
 
     def _extract_list(self, payload: Any) -> list[dict[str, Any]]:
         if isinstance(payload, list):
@@ -51,14 +67,23 @@ class LasairApiAdapter(BrokerAdapter):
             row.get("jd"),
             row.get("mjd"),
             row.get("obstime"),
+            row.get("midpointMjdTai"),
+            row.get("mjdTai"),
         ]
         for v in candidates:
             if v is None:
                 continue
             if isinstance(v, (int, float)):
-                # treat numeric as unix seconds fallback
+                fv = float(v)
+                # MJD values are typically around 50k-70k.
+                if 30_000 <= fv <= 90_000:
+                    try:
+                        unix = (fv - 40587.0) * 86400.0
+                        return datetime.fromtimestamp(unix, tz=timezone.utc)
+                    except Exception:
+                        continue
                 try:
-                    return datetime.fromtimestamp(float(v), tz=timezone.utc)
+                    return datetime.fromtimestamp(fv, tz=timezone.utc)
                 except Exception:
                     continue
             try:
@@ -67,20 +92,35 @@ class LasairApiAdapter(BrokerAdapter):
                 continue
         return datetime.now(timezone.utc)
 
-    def fetch_events(self) -> list[RawEvent]:
-        if not self.token:
-            LOGGER.warning("LASAIR_API_TOKEN missing; skipping live Lasair ingestion")
-            return []
-
-        # Use watch endpoint style payload, with query and lookback hints.
-        since = (datetime.now(timezone.utc) - timedelta(days=self.days_back)).isoformat()
-        url = f"{self.base_url}/query"
+    def _build_request(self) -> tuple[str, dict[str, str], dict[str, Any]]:
+        url = f"{self.base_url}/query/"
         headers = {"Authorization": f"Token {self.token}", "Content-Type": "application/json"}
+
+        if self.lasair_mode == "lsst":
+            selected = self.selected or "diaObjectId, ra, decl"
+            tables = self.tables or "objects"
+            conditions = self.conditions or "1=1"
+            body = {
+                "selected": selected,
+                "tables": tables,
+                "conditions": conditions,
+            }
+            return url, headers, body
+
+        since = (datetime.now(timezone.utc) - timedelta(days=self.days_back)).isoformat()
         body = {
             "query": self.query,
             "limit": self.limit,
             "since": since,
         }
+        return url, headers, body
+
+    def fetch_events(self) -> list[RawEvent]:
+        if not self.token:
+            LOGGER.warning("LASAIR_API_TOKEN missing; skipping live Lasair ingestion")
+            return []
+
+        url, headers, body = self._build_request()
 
         try:
             resp = requests.post(url, json=body, headers=headers, timeout=30)
@@ -105,9 +145,18 @@ class LasairApiAdapter(BrokerAdapter):
             return []
 
         rows = self._extract_list(payload)
+        if len(rows) > self.limit:
+            rows = rows[: self.limit]
+
         events: list[RawEvent] = []
         for row in rows:
-            source_id = str(row.get("source_id") or row.get("objectId") or row.get("oid") or "")
+            source_id = str(
+                row.get("source_id")
+                or row.get("objectId")
+                or row.get("oid")
+                or row.get("diaObjectId")
+                or ""
+            )
             if not source_id:
                 LOGGER.warning("Skipping Lasair row without source id")
                 continue

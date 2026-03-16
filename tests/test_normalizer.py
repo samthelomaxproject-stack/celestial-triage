@@ -26,3 +26,19 @@ def test_normalizer_maps_fields():
     assert d.ra == 10.5
     assert d.moving_flag is True
     assert d.catalog_match_status == "no_match"
+
+
+def test_normalizer_accepts_lsst_decl_field():
+    raw = RawEvent(
+        raw_event_id="r2",
+        broker_name="lasair_api",
+        source_id="170032882292621441",
+        timestamp=datetime.now(timezone.utc),
+        payload={
+            "ra": 123.4,
+            "decl": -22.5,
+        },
+    )
+    d = normalize_event(raw)
+    assert d.ra == 123.4
+    assert d.dec == -22.5

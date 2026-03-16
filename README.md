@@ -109,18 +109,48 @@ Set token:
 export LASAIR_API_TOKEN="your_token_here"
 ```
 
-Run:
+### Broker/domain matching (important)
+Lasair tokens are broker/domain scoped. Do not assume a token from one broker works on another.
+
+- **ZTF broker** token/UI typically maps to `https://lasair-ztf.lsst.ac.uk/api`
+- **LSST/Rubin broker** token/UI maps to `https://lasair.lsst.ac.uk/api`
+
+If auth returns `401 Invalid token`, verify token/domain pairing first.
+
+### ZTF mode (default, backward compatible)
 ```bash
-python -m celestial_triage.cli ingest-lasair --limit 100 --query "objectId:*" --days-back 3
-# or pass token directly
-python -m celestial_triage.cli ingest-lasair --token "$LASAIR_API_TOKEN" --limit 50 --days-back 2
+python -m celestial_triage.cli ingest-lasair \
+  --lasair-mode ztf \
+  --base-url https://lasair-ztf.lsst.ac.uk/api \
+  --limit 100 \
+  --query "objectId:*" \
+  --days-back 3
 ```
 
-Preset-driven usage:
+Preset-driven usage (ztf mode):
 ```bash
 python -m celestial_triage.cli ingest-lasair --preset fast_movers
 python -m celestial_triage.cli ingest-lasair --preset iso_candidates --days-back 5
 python -m celestial_triage.cli ingest-lasair --preset bright_followup --limit 120
+```
+
+### LSST/Rubin mode
+LSST broker query endpoint expects `selected`, `tables`, and `conditions` fields.
+
+```bash
+python -m celestial_triage.cli ingest-lasair \
+  --lasair-mode lsst \
+  --base-url https://lasair.lsst.ac.uk/api \
+  --selected "diaObjectId, ra, decl" \
+  --tables "objects" \
+  --conditions "1=1" \
+  --limit 25
+```
+
+You can also set base URL via environment:
+```bash
+export LASAIR_API_BASE_URL="https://lasair.lsst.ac.uk/api"
+python -m celestial_triage.cli ingest-lasair --lasair-mode lsst --limit 25
 ```
 
 Available presets:
@@ -129,7 +159,6 @@ Available presets:
 - `poor_catalog_matches`
 - `bright_followup`
 - `ambiguous_movers`
-
 
 Behavior:
 - API failures and rate limits are handled gracefully with logs
