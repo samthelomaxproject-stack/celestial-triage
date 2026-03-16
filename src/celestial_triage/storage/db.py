@@ -30,6 +30,21 @@ class Database:
     def init(self) -> None:
         with self.conn() as c:
             c.executescript(SCHEMA_SQL)
+            # Lightweight migration for older DBs missing newer shared_features columns
+            existing_cols = {
+                r[1]
+                for r in c.execute("PRAGMA table_info(shared_features)").fetchall()
+            }
+            required_cols = {
+                "first_seen": "TEXT",
+                "last_seen": "TEXT",
+                "brightness_trend": "REAL",
+                "motion_consistency_placeholder": "REAL",
+                "avg_class_confidence": "REAL",
+            }
+            for col, col_type in required_cols.items():
+                if col not in existing_cols:
+                    c.execute(f"ALTER TABLE shared_features ADD COLUMN {col} {col_type}")
             c.commit()
 
     def insert_raw_event(self, raw: RawEvent) -> None:
@@ -77,6 +92,14 @@ class Database:
                 ),
             )
             c.commit()
+
+    def rebuild_candidates_from_detections(self) -> int:
+        """Rebuild/refresh candidate summaries and linkage from all detections."""
+        with self.conn() as c:
+            source_ids = [r[0] for r in c.execute("SELECT DISTINCT source_id FROM detections").fetchall()]
+        for source_id in source_ids:
+            self.upsert_candidate_from_source(source_id)
+        return len(source_ids)
 
     def upsert_candidate_from_source(self, source_id: str) -> str:
         with self.conn() as c:
@@ -136,19 +159,25 @@ class Database:
             c.execute(
                 """
                 INSERT OR REPLACE INTO shared_features
-                (candidate_id, detection_count, detection_span_hours, avg_magnitude, mag_delta_abs,
-                 moving_fraction, poor_catalog_fraction, angular_motion_placeholder, orbit_fit_placeholder,
+                (candidate_id, detection_count, first_seen, last_seen, detection_span_hours, avg_magnitude, mag_delta_abs,
+                 brightness_trend, moving_fraction, motion_consistency_placeholder, poor_catalog_fraction,
+                 avg_class_confidence, angular_motion_placeholder, orbit_fit_placeholder,
                  hyperbolic_likelihood_placeholder, anomaly_index_placeholder, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     candidate_id,
                     features.get("detection_count"),
+                    features.get("first_seen"),
+                    features.get("last_seen"),
                     features.get("detection_span_hours"),
                     features.get("avg_magnitude"),
                     features.get("mag_delta_abs"),
+                    features.get("brightness_trend"),
                     features.get("moving_fraction"),
+                    features.get("motion_consistency_placeholder"),
                     features.get("poor_catalog_fraction"),
+                    features.get("avg_class_confidence"),
                     features.get("angular_motion_placeholder"),
                     features.get("orbit_fit_placeholder"),
                     features.get("hyperbolic_likelihood_placeholder"),

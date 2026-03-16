@@ -54,11 +54,9 @@ def cmd_seed_mock(args: argparse.Namespace) -> None:
         det = normalize_event(raw)
         db.insert_detection(det)
 
-    source_ids = {e.source_id for e in events}
-    for source_id in source_ids:
-        db.upsert_candidate_from_source(source_id)
+    n_candidates = db.rebuild_candidates_from_detections()
 
-    LOGGER.info("Seeded %d raw events, %d candidate groups", len(events), len(source_ids))
+    LOGGER.info("Seeded %d raw events, %d candidate groups", len(events), n_candidates)
 
 
 def cmd_extract_features(args: argparse.Namespace) -> None:

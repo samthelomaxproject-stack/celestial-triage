@@ -24,5 +24,8 @@ def test_feature_extraction_core_values():
     ]
     f = extract_shared_features(detections)
     assert f["detection_count"] == 2
+    assert f["first_seen"] == "2026-03-15T00:00:00+00:00"
+    assert f["last_seen"] == "2026-03-15T02:00:00+00:00"
     assert f["detection_span_hours"] == 2.0
     assert f["mag_delta_abs"] == 1.0
+    assert "motion_consistency_placeholder" in f

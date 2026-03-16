@@ -118,6 +118,13 @@ if candidate_id:
                     st.write(f"- {reason}")
                 st.caption(f"Scored at {r['created_at']}")
 
+        st.markdown("### Detection timeline summary")
+        if dets:
+            first_ts = dets[0]["timestamp"]
+            last_ts = dets[-1]["timestamp"]
+            st.write(f"First seen: `{first_ts}`")
+            st.write(f"Last seen: `{last_ts}`")
+            st.write(f"Sequence length: `{len(dets)}` detections")
         st.markdown("### Detection history")
         st.dataframe(dets, use_container_width=True)
 
