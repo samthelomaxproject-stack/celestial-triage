@@ -1,319 +1,362 @@
 # celestial-triage
 
-Layered astronomical candidate detection, anomaly triage, and selective retention.
+Celestial Triage is a layered analyst system for astronomical alert triage.
 
-## Mission
-This project ingests Rubin-style/broker alert-like data, normalizes detections into a shared model, runs multiple detector layers over the same candidate objects, ranks interesting candidates for analyst review, and applies retention tiers to avoid uncontrolled data growth.
+It ingests broker alerts, normalizes them into a common detection model, groups detections into candidate objects, scores those candidates across multiple detector domains, builds interpretation/conflict summaries, assigns follow-up priority, and supports analyst review/export workflows.
 
-**Important:** This system does not claim extraordinary identification. It is a triage and prioritization tool.
+The project includes:
+- a backend triage engine (storage + scoring + workflow logic)
+- a CLI boundary for reproducible operations
+- a Mac desktop analyst console on top of the CLI/backend
+- image/cutout asset linkage for science/reference/difference views when available
 
-## What currently works (validated)
-- Mock broker ingestion
-- Normalization into canonical detections
-- Candidate grouping/track building and shared feature extraction
-- Motion analysis upgrades (motion rate, consistency, heading/direction placeholders)
-- Orbit-fit scaffolding (orbit_fit_quality, eccentricity_placeholder, hyperbolic_likelihood, inbound/outbound placeholder)
-- Candidate association refinement with coherence filtering for implausible track jumps
-- Trajectory consistency features (`heading_change_consistency`, `path_smoothness_placeholder`, `trajectory_quality`)
-- Scenario realism with explicit mock archetypes (inbound/outbound ISO-like, KBO-like, NEO-like, satellite-like, anomaly-like)
-- Scenario evaluation helper for detector/archetype alignment insights
-- Improved ISO ranking heuristics using refined motion/orbit scaffolds (still transparent rule-based)
-- Follow-up priority scoring (`low`/`medium`/`high`/`urgent`) with explainable reasons
-- Candidate interpretation summary with primary detector, competing interpretations, conflict severity, and heuristic confidence framing (`weak`/`moderate`/`strong`)
-- Six detector modules with transparent scoring + reasons using candidate-level aggregates (span, trend, motion, orbit placeholders)
-- Score persistence in SQLite
-- Retention tier assignment (`hot`, `warm`, `cold`, `disposable`)
-- Streamlit triage dashboard
-- CLI workflow + export of top candidates (`csv` / `json`)
-- One-command smoke test script
+---
 
-## Why layered triage
-- Ingest once
-- Normalize once
-- Extract shared features once
-- Score many detector domains independently
-- Preserve one canonical candidate store (no detector silos)
+## What problem this solves
 
-## Detector classes (v1)
-- Unknown satellites / uncatalogued artificial-object candidates
-- Near-Earth objects (NEOs)
-- Unknown moving objects
-- Kuiper Belt object (KBO) candidates
-- Interstellar object (ISO) candidates
-- Deep-space anomaly candidates
+Modern alert streams produce more objects than analysts can inspect manually. Celestial Triage helps by:
 
-## Architecture overview
-- **Ingest**: broker-agnostic adapter interface + mock feed
-- **Normalize**: raw alerts → canonical detections
-  - required normalized field contract is documented in `ingest/base.py` (`REQUIRED_NORMALIZED_FIELDS`)
-- **External-readiness**: includes a narrow isolated `JsonlExternalAdapter` scaffold for first real-source integration prep
+- standardizing heterogeneous alert payloads into one canonical schema
+- ranking candidates by detector evidence and follow-up urgency
+- exposing interpretation/conflict context instead of a single opaque label
+- preserving analyst state (review state, tags, notes)
+- generating structured exports/bundles for handoff workflows
 
-### JSONL input notes (external path)
-Preferred keys:
-- `source_id` (or fallback `objectId`)
-- `timestamp` (ISO8601 preferred)
-- `ra`/`dec` (or `ra_deg`/`dec_deg`)
-- optional brightness/motion/class fields (`mag`, `magpsf`, `moving`, `is_moving`, `class_label`, `confidence`, etc.)
+It is a **triage and prioritization system** — not a claim engine.
 
-Records missing usable coordinates are skipped because they cannot be mapped into a normalized detection.
+---
 
-Sample files under `sample_data/` are **demo records** for schema/ingestion validation unless otherwise noted.
-- **Shared features**: computed once per candidate
-- **Detectors**: independent weighted rule modules
-- **Retention policy**: Tier 1/2/3/4 assignment
-- **Storage**: SQLite with compact relational schema
-- **UI**: Streamlit analyst dashboard
-- **CLI**: pipeline orchestration and testing
+## System architecture
 
-## Storage and retention strategy
-Retention tiers:
-1. **Hot**: active triage, short-lived raw payloads
-2. **Warm**: threshold-crossing/interesting reviewed objects
-3. **Cold**: archived high-interest compact history
-4. **Disposable/Summarized**: low-score, explained events
+### End-to-end pipeline
 
-Policy decisions use detector maxima, detection evidence, review state, poor catalog match, and hyperbolic/anomaly placeholders.
+Broker ingestion  
+↓  
+Normalization  
+↓  
+Candidate association  
+↓  
+Feature extraction  
+↓  
+Detector layers  
+↓  
+Interpretation/conflict analysis  
+↓  
+Follow-up prioritization  
+↓  
+Analyst review workflow  
+↓  
+Export / bundle generation  
+↓  
+Mac desktop analyst console
 
-## Setup / install
+### Components and relationships
+
+- **Backend engine** (`src/celestial_triage/...`)
+  - data model, SQLite persistence, ingestion adapters, feature extraction, detector scoring, interpretation/follow-up logic, retention and review persistence.
+- **CLI interface** (`python3 -m celestial_triage.cli ...`)
+  - operational boundary for all approved actions.
+- **Mac desktop UI** (`src/celestial_triage/macapp/desktop.py`)
+  - analyst console that reads backend data and triggers approved CLI actions through a safe runner.
+- **Image asset layer**
+  - extracts/stores image references from payloads and links them to detections/candidates for UI display.
+
+---
+
+## Repository layout (high level)
+
+- `src/celestial_triage/cli.py` — CLI command surface
+- `src/celestial_triage/storage/` — schema + DB access
+- `src/celestial_triage/ingest/` — ingest adapters + normalization
+- `src/celestial_triage/features/` — candidate-level feature extraction
+- `src/celestial_triage/detectors/` — detector scoring modules
+- `src/celestial_triage/scoring/` — interpretation, follow-up, evaluation
+- `src/celestial_triage/ui/dashboard.py` — Streamlit dashboard (transition path)
+- `src/celestial_triage/macapp/desktop.py` — Mac desktop analyst console
+- `src/celestial_triage/macapp/runner.py` — safe CLI action mapping layer
+
+---
+
+## Installation
+
 ```bash
-python -m venv .venv
+git clone https://github.com/samthelomaxproject-stack/celestial-triage.git
+cd celestial-triage
+
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 pip install -e .
 ```
 
-## Initialize DB
+If you prefer non-editable install for runtime only:
+
 ```bash
-python -m celestial_triage.cli init-db
+pip install .
 ```
 
-## Seed mock data
+---
+
+## Quick start
+
 ```bash
-python -m celestial_triage.cli seed-mock --count 200
+python3 -m celestial_triage.cli init-db
+python3 -m celestial_triage.cli seed-mock --count 120
+python3 -m celestial_triage.cli run-pipeline
+python3 -m celestial_triage.cli top-candidates --limit 20
 ```
 
-## Ingest external JSONL (first real-data path)
+Optional next step:
+
 ```bash
-python -m celestial_triage.cli ingest-jsonl --input sample_data/example.jsonl
+python3 -m celestial_triage.cli followup-report --limit 20
 ```
 
-This path is schema-hardened for imperfect inputs:
-- malformed JSONL lines are skipped with warnings
-- missing source identifiers are skipped with warnings
-- partial records use fallback normalization where possible
-- unusable records (e.g., missing/invalid coordinates) are skipped
+---
 
-## Ingest from Lasair API (live external source)
-Set token:
+## Broker ingestion (Lasair)
+
+Celestial Triage supports two Lasair broker domains.
+
+### 1) ZTF broker
+- Domain: `https://lasair-ztf.lsst.ac.uk`
+- Typical mode: `ztf`
+- Request format: `{"query": ...}`
+
+Example:
+
 ```bash
-export LASAIR_API_TOKEN="your_token_here"
-```
-
-### Broker/domain matching (important)
-Lasair tokens are broker/domain scoped. Do not assume a token from one broker works on another.
-
-- **ZTF broker** token/UI typically maps to `https://lasair-ztf.lsst.ac.uk/api`
-- **LSST/Rubin broker** token/UI maps to `https://lasair.lsst.ac.uk/api`
-
-If auth returns `401 Invalid token`, verify token/domain pairing first.
-
-### ZTF mode (default, backward compatible)
-```bash
-python -m celestial_triage.cli ingest-lasair \
+export LASAIR_API_TOKEN="<your_token>"
+python3 -m celestial_triage.cli ingest-lasair \
   --lasair-mode ztf \
   --base-url https://lasair-ztf.lsst.ac.uk/api \
-  --limit 100 \
   --query "objectId:*" \
-  --days-back 3
+  --days-back 3 \
+  --limit 50
 ```
 
-Preset-driven usage (ztf mode):
-```bash
-python -m celestial_triage.cli ingest-lasair --preset fast_movers
-python -m celestial_triage.cli ingest-lasair --preset iso_candidates --days-back 5
-python -m celestial_triage.cli ingest-lasair --preset bright_followup --limit 120
-```
+### 2) LSST / Rubin broker
+- Domain: `https://lasair.lsst.ac.uk`
+- Typical mode: `lsst`
+- Request format: `selected / tables / conditions`
 
-### LSST/Rubin mode
-LSST broker query endpoint expects `selected`, `tables`, and `conditions` fields.
+Example:
 
 ```bash
-python -m celestial_triage.cli ingest-lasair \
+export LASAIR_API_TOKEN="<your_token>"
+python3 -m celestial_triage.cli ingest-lasair \
   --lasair-mode lsst \
   --base-url https://lasair.lsst.ac.uk/api \
   --selected "diaObjectId, ra, decl" \
-  --tables "objects" \
+  --tables objects \
   --conditions "1=1" \
-  --limit 25
+  --limit 10
 ```
 
-You can also set base URL via environment:
+### Token requirements
+
+Tokens are broker/domain scoped. A token from one broker UI may fail against the other domain.
+
+If you get `401 Invalid token`, verify:
+- token source (ZTF UI vs LSST UI)
+- `--lasair-mode`
+- `--base-url`
+
+---
+
+## Mac desktop analyst console
+
+Location:
+- `src/celestial_triage/macapp/desktop.py`
+- `src/celestial_triage/macapp/runner.py`
+
+Launch:
+
 ```bash
-export LASAIR_API_BASE_URL="https://lasair.lsst.ac.uk/api"
-python -m celestial_triage.cli ingest-lasair --lasair-mode lsst --limit 25
+python3 -m celestial_triage.macapp.desktop
 ```
 
-Available presets:
-- `fast_movers`
-- `iso_candidates`
-- `poor_catalog_matches`
-- `bright_followup`
-- `ambiguous_movers`
+### UI layout
 
-Behavior:
-- API failures and rate limits are handled gracefully with logs
-- malformed records are skipped safely through the normalization-safe pipeline
-- ingest command runs post-ingest triage stages (features, detectors, retention)
-- output includes compact operational summary (accepted/skipped, top detector categories, top follow-up priorities)
-- ingested detections flow into candidate linking, features, detector scoring, retention, and UI display
+- **Left pane:** candidate queue + review filter
+- **Center pane:** candidate detail, detector scores, interpretation/conflict summary, trajectory summary, timeline/provenance, follow-up priority
+- **Right pane:** image panel + command/action tabs + execution logs
 
+### Safe command execution model
 
-## Run pipeline
+The desktop app does **not** execute arbitrary shell commands.
+
+It uses `SafeCliRunner` (`runner.py`) to map form inputs to an approved CLI allowlist only.
+
+---
+
+## Image asset support
+
+Image references discovered in broker payloads are stored in `image_assets` and linked to detections/candidates.
+
+### Supported image types
+- `science`
+- `reference` / `template`
+- `difference`
+
+### Data model highlights (`image_assets`)
+- linkage: `detection_id`, `candidate_id`, `source_id`
+- type: `kind`
+- location: `remote_url`, optional `local_path`
+- status: `fetch_status`, `error_message`
+- metadata: `metadata_json`
+
+### UI behavior
+
+When payloads contain cutout/image links, the Mac UI image panel shows them and can open source URLs.
+
+Current limitation:
+- minimal LSST query fields (for example `diaObjectId, ra, decl`) may not include cutout URLs.
+- in that case, candidate image panel may be empty until query payload/fields provide image references.
+
+---
+
+## CLI command reference
+
+All major workflows are exposed via:
+
 ```bash
-python -m celestial_triage.cli run-pipeline
+python3 -m celestial_triage.cli <command> [options]
 ```
 
-## Scenario evaluation report (dev/demo)
+### Core commands
+
+- `init-db` — initialize SQLite schema
+- `seed-mock` — generate mock events and normalized detections
+- `ingest-jsonl` — ingest external JSONL records
+- `ingest-lasair` — ingest live Lasair API records (ZTF/LSST modes)
+- `run-pipeline` — run feature extraction + detector scoring + retention
+- `top-candidates` — list highest-ranked candidates
+- `scenario-report` — summarize mock archetype vs detector outcomes
+- `update-review` — set review state, tags, notes
+- `followup-report` — report candidates by follow-up priority
+- `export-candidates` — export filtered candidate handoff data (json/csv/md)
+- `bundle-cases` — generate analyst bundle directory (summary + optional details)
+- `launch-ui` — launch Streamlit dashboard
+
+See full options:
+
 ```bash
-python -m celestial_triage.cli scenario-report
-python -m celestial_triage.cli scenario-report --top-iso-limit 20
+python3 -m celestial_triage.cli --help
+python3 -m celestial_triage.cli ingest-lasair --help
 ```
 
-## List top candidates
+---
+
+## Analyst workflow
+
+### Review states
+- `new`
+- `reviewing`
+- `follow-up`
+- `dismissed`
+
+### Review metadata
+- tags (comma-separated)
+- analyst notes
+
+### Triage outputs surfaced to analysts
+- detector score map
+- interpretation summary (primary interpretation + conflict context)
+- follow-up priority + reasons
+- provenance/timeline context
+- retention tier context
+
+### Handoff outputs
+- `export-candidates` for structured exports
+- `bundle-cases` for analyst package directories
+
+---
+
+## Streamlit dashboard (transition path)
+
+Streamlit remains available during desktop migration:
+
 ```bash
-python -m celestial_triage.cli top-candidates --limit 20
-```
-
-### Export top candidates
-```bash
-python -m celestial_triage.cli top-candidates --limit 50 --export csv --output top_candidates.csv
-python -m celestial_triage.cli top-candidates --limit 50 --export json --output top_candidates.json
-```
-
-### Update analyst review state from CLI
-```bash
-python -m celestial_triage.cli update-review --candidate-id <ID> --state reviewing --tags "iso,priority" --notes "Needs follow-up"
-```
-
-### Follow-up priority report
-```bash
-python -m celestial_triage.cli followup-report --limit 20
-```
-
-### Reviewed candidate export / analyst handoff
-```bash
-python -m celestial_triage.cli export-candidates --format json --output handoff.json --review-state follow-up
-python -m celestial_triage.cli export-candidates --format csv --output handoff.csv --high-iso --tagged-only
-python -m celestial_triage.cli export-candidates --format md --output handoff.md --detector iso_detector --followup-priority high
-```
-
-Exports now include interpretation/confidence framing fields:
-- `primary_interpretation`
-- `interpretation_confidence`
-- `conflict_severity`
-- `competing_interpretations`
-- `interpretation_explanation`
-
-Supported export filters:
-- `--review-state`
-- `--followup-priority`
-- `--detector`
-- `--high-iso`
-- `--tagged-only`
-- `--broker`
-
-
-## Launch UI
-```bash
-python -m celestial_triage.cli launch-ui
-# or directly:
+python3 -m celestial_triage.cli launch-ui
+# or
 streamlit run src/celestial_triage/ui/dashboard.py
 ```
 
-## Mac Analyst Console (desktop path)
-A Mac-focused desktop console now lives at:
-- `src/celestial_triage/macapp/desktop.py`
+---
 
-Run it:
+## Development and testing
+
+Run tests:
+
 ```bash
-python -m celestial_triage.macapp.desktop
+pytest -q
 ```
 
-### Architecture
-- Backend remains authoritative in CLI + storage layers.
-- Desktop UI reads candidate/detection/score/review/image data from SQLite.
-- Desktop actions execute **only** approved CLI commands via a safe mapping layer:
-  - `src/celestial_triage/macapp/runner.py`
-- No free-form shell execution from UI.
+Run smoke test:
 
-### Approved CLI actions in desktop app
-- `init-db`
-- `seed-mock`
-- `ingest-jsonl`
-- `ingest-lasair`
-- `run-pipeline`
-- `top-candidates`
-- `scenario-report`
-- `update-review`
-- `followup-report`
-- `export-candidates`
-- `bundle-cases`
-
-### Desktop data surfaced
-- candidate queue/list + review filters
-- candidate detail + features
-- detector scores
-- interpretation/conflict summary
-- follow-up priority
-- review state/tags/notes
-- provenance + timeline count/summary
-- trajectory summary
-- image panel grouped by kind (science/reference/difference) when image links exist
-
-## Image asset linkage
-Image/cutout references are extracted during ingest (when present in broker payloads) and persisted in `image_assets`.
-Fields include:
-- `kind` (`science` / `reference` / `difference`)
-- `remote_url`
-- `source_field`
-- linkage to detection and candidate
-
-Current behavior:
-- link discovery + persistence are implemented
-- candidate linkage is maintained post-ingest
-- panel displays linked assets and can open source URL
-
-If a broker/source path does not expose cutout URLs in its payload, records simply contain no image links until those endpoints/fields are added.
-
-## One-command smoke test
 ```bash
 ./scripts/smoke_test.sh
 ```
 
-## CLI help
+Compile check:
+
 ```bash
-python -m celestial_triage.cli --help
+python3 -m compileall -q src
 ```
 
-## Lightweight developer tooling
-- `ruff` and `black` config is in `pyproject.toml`
-- `pytest` config is in `pyproject.toml`
+---
 
-## Known limitations
-- Live Lasair integration is minimal and API/query behavior may vary by service/account configuration
-- Candidate association refinement is heuristic and may under/over-group in edge cases
-- Trajectory coherence fields are heuristic plausibility signals, not physical track guarantees
-- Orbit-fit/eccentricity/hyperbolic fields are heuristic scaffolds, not orbital certainty
-- Interpretation/confidence framing (`weak/moderate/strong`) is heuristic and should not be treated as physical certainty
-- Follow-up priority is an analyst aid derived from detector/feature heuristics, not a definitive classification
-- Rule-based scoring only (transparent, non-ML v1)
-- UI is intentionally lightweight for analyst workflow validation
+## Troubleshooting
 
-## Next steps
-- Add first real broker adapter implementation
-- Improve orbital features and temporal linking
-- Add migration tooling for PostgreSQL
-- Add richer analyst review/audit workflow
+### Problem: `ModuleNotFoundError: No module named 'celestial_triage'`
+Cause:
+- package not installed in current environment, or running without package path.
+
+Solution:
+```bash
+pip install -e .
+# or if running source-layout directly
+export PYTHONPATH=src
+```
+
+### Problem: `Invalid Lasair token`
+Cause:
+- token/domain mismatch (for example LSST token used against ZTF endpoint).
+
+Solution:
+- use matching `--lasair-mode` and `--base-url`:
+  - LSST: `--lasair-mode lsst --base-url https://lasair.lsst.ac.uk/api`
+  - ZTF: `--lasair-mode ztf --base-url https://lasair-ztf.lsst.ac.uk/api`
+
+### Problem: `python: command not found`
+Solution:
+```bash
+python3 ...
+```
+
+### Problem: image panel is empty
+Cause:
+- current broker query payload does not include cutout/image URLs.
+
+Solution:
+- expand selected fields or use payload/query paths that include cutout references.
+
+---
+
+## Roadmap
+
+Planned/desired improvements:
+
+- sky map visualization for candidate tracks
+- automatic image anomaly heuristics/classification
+- Android companion app for analyst workflows
+- real-time broker streaming ingestion paths
+- improved orbit fitting and physical consistency modeling
+
+---
 
 ## Disclaimer
-This system ranks unusual astronomical candidates for review. It does **not** assert extraordinary identifications or definitive classifications.
+
+Celestial Triage ranks and organizes candidates for analyst review.
+It does **not** make definitive extraordinary-object claims.
