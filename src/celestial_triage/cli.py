@@ -19,6 +19,7 @@ from celestial_triage.detectors import (
 from celestial_triage.features.extractor import extract_shared_features
 from celestial_triage.ingest.external_jsonl import JsonlExternalAdapter
 from celestial_triage.ingest.lasair_api import LasairApiAdapter
+from celestial_triage.ingest.lasair_presets import PRESETS, resolve_preset
 from celestial_triage.ingest.mock_feed import MockFeedAdapter
 from celestial_triage.ingest.normalizer import normalize_event_safe
 from celestial_triage.models.entities import DetectorScore
@@ -108,13 +109,53 @@ def cmd_ingest_lasair(args: argparse.Namespace) -> None:
     db = Database(DB_PATH)
     db.init()
 
-    adapter = LasairApiAdapter(token=args.token, query=args.query, limit=args.limit, days_back=args.days_back)
+    query = args.query or "objectId:*"
+    limit = args.limit if args.limit is not None else 100
+    days_back = args.days_back if args.days_back is not None else 3
+    preset_name = args.preset
+    preset = resolve_preset(preset_name)
+    if preset:
+        query = preset.query if not args.query else args.query
+        limit = preset.limit if args.limit is None else args.limit
+        days_back = preset.days_back if args.days_back is None else args.days_back
+        LOGGER.info(
+            "Using Lasair preset '%s' (query=%s, days_back=%d, limit=%d)",
+            preset.name,
+            query,
+            days_back,
+            limit,
+        )
+
+    adapter = LasairApiAdapter(token=args.token, query=query, limit=limit, days_back=days_back)
     events = adapter.fetch_events()
     if not events:
         LOGGER.warning("No ingestible Lasair events returned")
         return
 
     accepted, skipped, n_candidates = _ingest_raw_events(db, events, "lasair")
+
+    # Run triage pipeline so summary reflects detector/follow-up state.
+    cmd_extract_features(args)
+    cmd_run_detectors(args)
+    cmd_assign_retention(args)
+
+    top_scores = db.top_candidates(limit=20)
+    detector_hits: dict[str, int] = {}
+    priority_hits: dict[str, int] = {}
+    for row in top_scores:
+        cid = row["candidate_id"]
+        score_rows = db.get_latest_scores(cid)
+        if score_rows:
+            top_det = sorted(score_rows, key=lambda s: float(s["score"]), reverse=True)[0]["detector_name"]
+            detector_hits[top_det] = detector_hits.get(top_det, 0) + 1
+        cand = db.get_candidate_with_features(cid)
+        features = cand.get("features", {})
+        score_map = {s["detector_name"]: float(s["score"]) for s in score_rows}
+        review_state = str(cand.get("review_status") or "new")
+        fp = build_followup_priority(features, score_map, review_state)
+        p = fp["priority"]
+        priority_hits[p] = priority_hits.get(p, 0) + 1
+
     LOGGER.info(
         "Ingested Lasair (%d raw, %d accepted, %d skipped), %d candidates total",
         len(events),
@@ -122,6 +163,8 @@ def cmd_ingest_lasair(args: argparse.Namespace) -> None:
         skipped,
         n_candidates,
     )
+    LOGGER.info("Top detector categories (sampled): %s", detector_hits)
+    LOGGER.info("Top follow-up priorities (sampled): %s", priority_hits)
 
 def cmd_extract_features(args: argparse.Namespace) -> None:
     db = Database(DB_PATH)
@@ -274,9 +317,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_ingest_jsonl)
 
     p = sub.add_parser("ingest-lasair", help="Ingest live Lasair API records")
-    p.add_argument("--limit", type=int, default=100, help="Max records to request")
-    p.add_argument("--query", type=str, default="objectId:*", help="Lasair query string")
-    p.add_argument("--days-back", type=int, default=3, help="Lookback window in days")
+    p.add_argument("--preset", choices=sorted(PRESETS.keys()), default=None, help="Optional query preset")
+    p.add_argument("--limit", type=int, default=None, help="Max records to request")
+    p.add_argument("--query", type=str, default="", help="Lasair query string (overrides preset query)")
+    p.add_argument("--days-back", type=int, default=None, help="Lookback window in days")
     p.add_argument("--token", type=str, default=None, help="Optional Lasair token (or use LASAIR_API_TOKEN env)")
     p.set_defaults(func=cmd_ingest_lasair)
 

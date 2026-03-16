@@ -101,7 +101,7 @@ if candidate_id:
     ).fetchall()
     dets = conn.execute(
         """
-        SELECT d.timestamp,d.ra,d.dec,d.magnitude,d.magnitude_change,d.moving_flag,d.catalog_match_status
+        SELECT d.timestamp,d.broker_name,d.ra,d.dec,d.magnitude,d.magnitude_change,d.moving_flag,d.catalog_match_status
         FROM detections d JOIN candidate_detections cd ON d.detection_id=cd.detection_id
         WHERE cd.candidate_id=? ORDER BY d.timestamp ASC
         """,
@@ -114,6 +114,14 @@ if candidate_id:
         st.json(dict(cand) if cand else {})
         if cand and cand.get("mock_archetype_label"):
             st.info(f"Demo-only mock archetype label: {cand['mock_archetype_label']}")
+
+        if dets:
+            by_source: dict[str, int] = {}
+            for d in dets:
+                k = d["broker_name"] or "unknown"
+                by_source[k] = by_source.get(k, 0) + 1
+            st.markdown("### Provenance")
+            st.json({"detection_sources": by_source})
 
         st.markdown("### Timeline summary")
         if feats:

@@ -113,10 +113,27 @@ python -m celestial_triage.cli ingest-lasair --limit 100 --query "objectId:*" --
 python -m celestial_triage.cli ingest-lasair --token "$LASAIR_API_TOKEN" --limit 50 --days-back 2
 ```
 
+Preset-driven usage:
+```bash
+python -m celestial_triage.cli ingest-lasair --preset fast_movers
+python -m celestial_triage.cli ingest-lasair --preset iso_candidates --days-back 5
+python -m celestial_triage.cli ingest-lasair --preset bright_followup --limit 120
+```
+
+Available presets:
+- `fast_movers`
+- `iso_candidates`
+- `poor_catalog_matches`
+- `bright_followup`
+- `ambiguous_movers`
+
+
 Behavior:
 - API failures and rate limits are handled gracefully with logs
 - malformed records are skipped safely through the normalization-safe pipeline
-- ingested detections flow into candidate linking, features, detector scoring, and retention via existing commands
+- ingest command runs post-ingest triage stages (features, detectors, retention)
+- output includes compact operational summary (accepted/skipped, top detector categories, top follow-up priorities)
+- ingested detections flow into candidate linking, features, detector scoring, retention, and UI display
 
 
 ## Run pipeline
