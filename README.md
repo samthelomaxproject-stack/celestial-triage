@@ -11,7 +11,9 @@ This project ingests Rubin-style/broker alert-like data, normalizes detections i
 - Mock broker ingestion
 - Normalization into canonical detections
 - Candidate grouping/track building and shared feature extraction
-- Six detector modules with transparent scoring + reasons using candidate-level aggregates (span, trend, motion consistency)
+- Motion analysis upgrades (motion rate, consistency, heading/direction placeholders)
+- Orbit-fit scaffolding (orbit_fit_quality, eccentricity_placeholder, hyperbolic_likelihood, inbound/outbound placeholder)
+- Six detector modules with transparent scoring + reasons using candidate-level aggregates (span, trend, motion, orbit placeholders)
 - Score persistence in SQLite
 - Retention tier assignment (`hot`, `warm`, `cold`, `disposable`)
 - Streamlit triage dashboard

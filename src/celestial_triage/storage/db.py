@@ -39,8 +39,15 @@ class Database:
                 "first_seen": "TEXT",
                 "last_seen": "TEXT",
                 "brightness_trend": "REAL",
+                "motion_rate_deg_per_hour": "REAL",
                 "motion_consistency_placeholder": "REAL",
+                "direction_consistency_placeholder": "REAL",
+                "heading_deg_placeholder": "REAL",
                 "avg_class_confidence": "REAL",
+                "orbit_fit_quality": "REAL",
+                "eccentricity_placeholder": "REAL",
+                "hyperbolic_likelihood": "REAL",
+                "inbound_outbound_placeholder": "TEXT",
             }
             for col, col_type in required_cols.items():
                 if col not in existing_cols:
@@ -160,10 +167,12 @@ class Database:
                 """
                 INSERT OR REPLACE INTO shared_features
                 (candidate_id, detection_count, first_seen, last_seen, detection_span_hours, avg_magnitude, mag_delta_abs,
-                 brightness_trend, moving_fraction, motion_consistency_placeholder, poor_catalog_fraction,
-                 avg_class_confidence, angular_motion_placeholder, orbit_fit_placeholder,
+                 brightness_trend, moving_fraction, motion_rate_deg_per_hour, motion_consistency_placeholder,
+                 direction_consistency_placeholder, heading_deg_placeholder, poor_catalog_fraction,
+                 avg_class_confidence, angular_motion_placeholder, orbit_fit_quality, eccentricity_placeholder,
+                 hyperbolic_likelihood, inbound_outbound_placeholder, orbit_fit_placeholder,
                  hyperbolic_likelihood_placeholder, anomaly_index_placeholder, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     candidate_id,
@@ -175,10 +184,17 @@ class Database:
                     features.get("mag_delta_abs"),
                     features.get("brightness_trend"),
                     features.get("moving_fraction"),
+                    features.get("motion_rate_deg_per_hour"),
                     features.get("motion_consistency_placeholder"),
+                    features.get("direction_consistency_placeholder"),
+                    features.get("heading_deg_placeholder"),
                     features.get("poor_catalog_fraction"),
                     features.get("avg_class_confidence"),
                     features.get("angular_motion_placeholder"),
+                    features.get("orbit_fit_quality"),
+                    features.get("eccentricity_placeholder"),
+                    features.get("hyperbolic_likelihood"),
+                    features.get("inbound_outbound_placeholder"),
                     features.get("orbit_fit_placeholder"),
                     features.get("hyperbolic_likelihood_placeholder"),
                     features.get("anomaly_index_placeholder"),

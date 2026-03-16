@@ -100,7 +100,33 @@ if candidate_id:
         else:
             st.info("No retention decision yet. Run `assign-retention`.")
 
-        st.markdown("### Shared features")
+        st.markdown("### Motion features")
+        if feats:
+            st.json(
+                {
+                    "detection_count": feats["detection_count"],
+                    "first_seen": feats["first_seen"],
+                    "last_seen": feats["last_seen"],
+                    "detection_span_hours": feats["detection_span_hours"],
+                    "motion_rate_deg_per_hour": feats["motion_rate_deg_per_hour"],
+                    "motion_consistency_placeholder": feats["motion_consistency_placeholder"],
+                    "direction_consistency_placeholder": feats["direction_consistency_placeholder"],
+                    "heading_deg_placeholder": feats["heading_deg_placeholder"],
+                }
+            )
+
+        st.markdown("### Orbit scaffold features")
+        if feats:
+            st.json(
+                {
+                    "orbit_fit_quality": feats["orbit_fit_quality"],
+                    "eccentricity_placeholder": feats["eccentricity_placeholder"],
+                    "hyperbolic_likelihood": feats["hyperbolic_likelihood"],
+                    "inbound_outbound_placeholder": feats["inbound_outbound_placeholder"],
+                }
+            )
+
+        st.markdown("### Shared features (full)")
         st.json(dict(feats) if feats else {})
 
         st.markdown("### Detector scores (side-by-side)")

@@ -1,6 +1,8 @@
 from datetime import datetime
 from math import sqrt
 
+from celestial_triage.features.orbit import compute_orbit_scaffold_features, heading_deg
+
 
 def _safe_div(num: float, den: float) -> float:
     return 0.0 if den == 0 else num / den
@@ -27,14 +29,24 @@ def extract_shared_features(detections: list[dict]) -> dict:
     ra0, dec0 = float(detections[0]["ra"]), float(detections[0]["dec"])
     ra1, dec1 = float(detections[-1]["ra"]), float(detections[-1]["dec"])
     angular_motion = sqrt((ra1 - ra0) ** 2 + (dec1 - dec0) ** 2)
+    motion_rate = angular_motion / span_h if span_h > 0 else 0.0
 
-    # Motion consistency placeholder: step-length stability over ordered detections.
+    # Motion consistency: step-length stability over ordered detections.
     step_lengths: list[float] = []
+    headings: list[float] = []
     for i in range(1, len(detections)):
         d_prev = detections[i - 1]
         d_cur = detections[i]
         step = sqrt((float(d_cur["ra"]) - float(d_prev["ra"])) ** 2 + (float(d_cur["dec"]) - float(d_prev["dec"])) ** 2)
         step_lengths.append(step)
+        headings.append(
+            heading_deg(
+                float(d_prev["ra"]),
+                float(d_prev["dec"]),
+                float(d_cur["ra"]),
+                float(d_cur["dec"]),
+            )
+        )
 
     if step_lengths:
         mean_step = sum(step_lengths) / len(step_lengths)
@@ -44,9 +56,26 @@ def extract_shared_features(detections: list[dict]) -> dict:
     else:
         motion_consistency = 0.0
 
+    if headings:
+        mean_h = sum(headings) / len(headings)
+        heading_var = sum((h - mean_h) ** 2 for h in headings) / len(headings)
+        heading_std = heading_var**0.5
+        direction_consistency = max(0.0, 1.0 - min(1.0, heading_std / 180.0))
+        heading_placeholder = mean_h
+    else:
+        direction_consistency = 0.0
+        heading_placeholder = 0.0
+
     orbit_fit_placeholder = max(0.0, 1.0 - min(1.0, angular_motion / 50.0))
     hyperbolic_placeholder = min(1.0, (angular_motion / 20.0) * _safe_div(sum(poor_catalog_vals), len(detections)))
     anomaly_index = min(1.0, (mag_delta_abs / 2.5) * (1.0 - _safe_div(sum(class_conf), len(detections))))
+
+    orbit = compute_orbit_scaffold_features(
+        motion_rate_deg_per_hour=motion_rate,
+        motion_consistency=motion_consistency,
+        poor_catalog_fraction=_safe_div(sum(poor_catalog_vals), len(detections)),
+        detection_count=len(detections),
+    )
 
     return {
         "detection_count": len(detections),
@@ -57,10 +86,17 @@ def extract_shared_features(detections: list[dict]) -> dict:
         "mag_delta_abs": mag_delta_abs,
         "brightness_trend": brightness_trend,
         "moving_fraction": _safe_div(sum(moving_vals), len(moving_vals)),
+        "motion_rate_deg_per_hour": motion_rate,
         "motion_consistency_placeholder": motion_consistency,
+        "direction_consistency_placeholder": direction_consistency,
+        "heading_deg_placeholder": heading_placeholder,
         "poor_catalog_fraction": _safe_div(sum(poor_catalog_vals), len(poor_catalog_vals)),
         "avg_class_confidence": _safe_div(sum(class_conf), len(class_conf)),
         "angular_motion_placeholder": angular_motion,
+        "orbit_fit_quality": orbit["orbit_fit_quality"],
+        "eccentricity_placeholder": orbit["eccentricity_placeholder"],
+        "hyperbolic_likelihood": orbit["hyperbolic_likelihood"],
+        "inbound_outbound_placeholder": orbit["inbound_outbound_placeholder"],
         "orbit_fit_placeholder": orbit_fit_placeholder,
         "hyperbolic_likelihood_placeholder": hyperbolic_placeholder,
         "anomaly_index_placeholder": anomaly_index,
