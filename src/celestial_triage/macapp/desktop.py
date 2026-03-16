@@ -281,11 +281,10 @@ class AnalystConsoleApp(tk.Tk):
     def _build_ops_tab(self) -> None:
         f = self.tab_ops
         ttk.Button(f, text="init-db", command=lambda: self.run_command("init-db", {})).grid(row=0, column=0, sticky="ew")
-        ttk.Button(f, text="seed-mock", command=lambda: self.run_command("seed-mock", {"count": 120})).grid(row=1, column=0, sticky="ew")
-        ttk.Button(f, text="run-pipeline", command=lambda: self.run_command("run-pipeline", {})).grid(row=2, column=0, sticky="ew")
-        ttk.Button(f, text="top-candidates", command=lambda: self.run_command("top-candidates", {"limit": 20})).grid(row=3, column=0, sticky="ew")
-        ttk.Button(f, text="followup-report", command=lambda: self.run_command("followup-report", {"limit": 20})).grid(row=4, column=0, sticky="ew")
-        ttk.Button(f, text="scenario-report", command=lambda: self.run_command("scenario-report", {})).grid(row=5, column=0, sticky="ew")
+        ttk.Button(f, text="run-pipeline", command=lambda: self.run_command("run-pipeline", {})).grid(row=1, column=0, sticky="ew")
+        ttk.Button(f, text="top-candidates", command=lambda: self.run_command("top-candidates", {"limit": 20})).grid(row=2, column=0, sticky="ew")
+        ttk.Button(f, text="followup-report", command=lambda: self.run_command("followup-report", {"limit": 20})).grid(row=3, column=0, sticky="ew")
+        ttk.Button(f, text="scenario-report", command=lambda: self.run_command("scenario-report", {})).grid(row=4, column=0, sticky="ew")
 
     def _build_settings_tab(self) -> None:
         f = self.tab_settings
