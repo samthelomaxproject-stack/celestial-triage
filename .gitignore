@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.venv/
+venv/
+.env
+
+# Streamlit
+.streamlit/
+
+# SQLite
+*.db
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
