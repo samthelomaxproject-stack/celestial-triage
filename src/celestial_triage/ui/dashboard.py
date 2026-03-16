@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from celestial_triage.scoring.followup import build_followup_priority
+from celestial_triage.scoring.interpretation import build_interpretation_summary
 from celestial_triage.scoring.iso_review import build_iso_review_signal
 
 DB_PATH = Path("celestial_triage.db")
@@ -160,6 +161,10 @@ if candidate_id:
         pivot = {r["detector_name"]: float(r["score"]) for r in scores}
         st.dataframe([pivot], use_container_width=True)
 
+        st.markdown("### Interpretation Summary")
+        interpretation = build_interpretation_summary(dict(feats) if feats else {}, pivot)
+        st.json(interpretation)
+
         st.markdown("### Detector conflicts")
         iso = float(pivot.get("iso_detector", 0.0))
         neo = float(pivot.get("neo_detector", 0.0))
@@ -173,6 +178,7 @@ if candidate_id:
                     for name, val in [("iso_detector", iso), ("neo_detector", neo), ("kbo_detector", kbo)]
                     if val >= 0.6
                 ],
+                "conflict_severity": interpretation.get("conflict_severity", "none"),
             }
         )
 

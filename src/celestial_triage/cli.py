@@ -26,6 +26,7 @@ from celestial_triage.models.entities import DetectorScore
 from celestial_triage.scoring.common import score_band
 from celestial_triage.scoring.evaluation import archetype_evaluation_report
 from celestial_triage.scoring.followup import build_followup_priority
+from celestial_triage.scoring.interpretation import build_interpretation_summary
 from celestial_triage.storage.db import Database
 from celestial_triage.storage.retention import assign_retention_tier
 from celestial_triage.utils.logging import get_logger
@@ -246,6 +247,8 @@ def _write_rows(rows: list[dict[str, Any]], fmt: str, output: Path, fieldnames: 
             lines.append(f"- Review: {r.get('review_state','new')}")
             lines.append(f"- Follow-up: {r.get('followup_priority','low')} ({r.get('followup_score',0)})")
             lines.append(f"- ISO score: {r.get('iso_score',0)}")
+            lines.append(f"- Interpretation: {r.get('primary_interpretation','unknown')} ({r.get('interpretation_confidence','weak')})")
+            lines.append(f"- Conflict: {r.get('conflict_severity','none')} | Competing: {r.get('competing_interpretations','')}")
             lines.append(f"- Retention: {r.get('retention_tier','')}")
             lines.append(f"- Provenance: {r.get('provenance_summary','')}")
             lines.append(f"- Tags: {r.get('tags','')}")
@@ -363,6 +366,8 @@ def build_export_rows(
         if followup_priority and followup["priority"] != followup_priority:
             continue
 
+        interpretation = build_interpretation_summary(features, score_map)
+
         first_seen = str(cand.get("first_seen") or features.get("first_seen") or "")
         last_seen = str(cand.get("last_seen") or features.get("last_seen") or "")
         detection_count = int(cand.get("detection_count") or features.get("detection_count") or 0)
@@ -382,6 +387,11 @@ def build_export_rows(
             "first_seen": first_seen,
             "last_seen": last_seen,
             "detection_count": detection_count,
+            "primary_interpretation": interpretation["primary_interpretation"],
+            "interpretation_confidence": interpretation["confidence"],
+            "conflict_severity": interpretation["conflict_severity"],
+            "competing_interpretations": ", ".join(interpretation["competing_interpretations"]),
+            "interpretation_explanation": interpretation["explanation"],
         }
         out.append(row)
     return out
@@ -424,6 +434,11 @@ def cmd_export_candidates(args: argparse.Namespace) -> None:
                 "first_seen",
                 "last_seen",
                 "detection_count",
+                "primary_interpretation",
+                "interpretation_confidence",
+                "conflict_severity",
+                "competing_interpretations",
+                "interpretation_explanation",
                 "detector_scores",
             ],
         )

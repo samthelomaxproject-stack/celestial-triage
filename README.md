@@ -17,6 +17,7 @@ This project ingests Rubin-style/broker alert-like data, normalizes detections i
 - Scenario evaluation helper for detector/archetype alignment insights
 - Improved ISO ranking heuristics using refined motion/orbit scaffolds (still transparent rule-based)
 - Follow-up priority scoring (`low`/`medium`/`high`/`urgent`) with explainable reasons
+- Candidate interpretation summary with primary detector, competing interpretations, conflict severity, and heuristic confidence framing (`weak`/`moderate`/`strong`)
 - Six detector modules with transparent scoring + reasons using candidate-level aggregates (span, trend, motion, orbit placeholders)
 - Score persistence in SQLite
 - Retention tier assignment (`hot`, `warm`, `cold`, `disposable`)
@@ -175,6 +176,13 @@ python -m celestial_triage.cli export-candidates --format csv --output handoff.c
 python -m celestial_triage.cli export-candidates --format md --output handoff.md --detector iso_detector --followup-priority high
 ```
 
+Exports now include interpretation/confidence framing fields:
+- `primary_interpretation`
+- `interpretation_confidence`
+- `conflict_severity`
+- `competing_interpretations`
+- `interpretation_explanation`
+
 Supported export filters:
 - `--review-state`
 - `--followup-priority`
@@ -208,6 +216,7 @@ python -m celestial_triage.cli --help
 ## Known limitations
 - Live Lasair integration is minimal and API/query behavior may vary by service/account configuration
 - Orbit-fit/eccentricity/hyperbolic fields are heuristic scaffolds, not orbital certainty
+- Interpretation/confidence framing (`weak/moderate/strong`) is heuristic and should not be treated as physical certainty
 - Follow-up priority is an analyst aid derived from detector/feature heuristics, not a definitive classification
 - Rule-based scoring only (transparent, non-ML v1)
 - UI is intentionally lightweight for analyst workflow validation
