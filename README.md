@@ -15,7 +15,8 @@ This project ingests Rubin-style/broker alert-like data, normalizes detections i
 - Orbit-fit scaffolding (orbit_fit_quality, eccentricity_placeholder, hyperbolic_likelihood, inbound/outbound placeholder)
 - Scenario realism with explicit mock archetypes (inbound/outbound ISO-like, KBO-like, NEO-like, satellite-like, anomaly-like)
 - Scenario evaluation helper for detector/archetype alignment insights
-- Improved ISO ranking heuristics using motion/orbit scaffolds (still transparent rule-based)
+- Improved ISO ranking heuristics using refined motion/orbit scaffolds (still transparent rule-based)
+- Follow-up priority scoring (`low`/`medium`/`high`/`urgent`) with explainable reasons
 - Six detector modules with transparent scoring + reasons using candidate-level aggregates (span, trend, motion, orbit placeholders)
 - Score persistence in SQLite
 - Retention tier assignment (`hot`, `warm`, `cold`, `disposable`)
@@ -145,6 +146,11 @@ python -m celestial_triage.cli top-candidates --limit 50 --export json --output 
 python -m celestial_triage.cli update-review --candidate-id <ID> --state reviewing --tags "iso,priority" --notes "Needs follow-up"
 ```
 
+### Follow-up priority report
+```bash
+python -m celestial_triage.cli followup-report --limit 20
+```
+
 ## Launch UI
 ```bash
 python -m celestial_triage.cli launch-ui
@@ -168,9 +174,10 @@ python -m celestial_triage.cli --help
 
 ## Known limitations
 - Live Lasair integration is minimal and API/query behavior may vary by service/account configuration
-- Orbit fitting/hyperbolic logic remain placeholders (not orbital certainty)
+- Orbit-fit/eccentricity/hyperbolic fields are heuristic scaffolds, not orbital certainty
+- Follow-up priority is an analyst aid derived from detector/feature heuristics, not a definitive classification
 - Rule-based scoring only (transparent, non-ML v1)
-- UI is intentionally minimal for analyst workflow validation
+- UI is intentionally lightweight for analyst workflow validation
 
 ## Next steps
 - Add first real broker adapter implementation

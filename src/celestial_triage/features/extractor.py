@@ -75,6 +75,8 @@ def extract_shared_features(detections: list[dict]) -> dict:
         motion_consistency=motion_consistency,
         poor_catalog_fraction=_safe_div(sum(poor_catalog_vals), len(detections)),
         detection_count=len(detections),
+        detection_span_hours=span_h,
+        direction_consistency=direction_consistency,
     )
 
     return {

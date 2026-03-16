@@ -24,6 +24,7 @@ from celestial_triage.ingest.normalizer import normalize_event_safe
 from celestial_triage.models.entities import DetectorScore
 from celestial_triage.scoring.common import score_band
 from celestial_triage.scoring.evaluation import archetype_evaluation_report
+from celestial_triage.scoring.followup import build_followup_priority
 from celestial_triage.storage.db import Database
 from celestial_triage.storage.retention import assign_retention_tier
 from celestial_triage.utils.logging import get_logger
@@ -226,6 +227,29 @@ def cmd_update_review(args: argparse.Namespace) -> None:
     LOGGER.info("Updated review state for %s -> %s", args.candidate_id, args.state)
 
 
+def cmd_followup_report(args: argparse.Namespace) -> None:
+    db = Database(DB_PATH)
+    rows = []
+    for cid in db.list_candidate_ids():
+        cand = db.get_candidate_with_features(cid)
+        features = cand.get("features", {})
+        scores = db.get_latest_scores(cid)
+        score_map = {s["detector_name"]: float(s["score"]) for s in scores}
+        review_state = str(cand.get("review_status") or "new")
+        f = build_followup_priority(features, score_map, review_state)
+        rows.append(
+            {
+                "candidate_id": cid,
+                "priority": f["priority"],
+                "priority_score": f["priority_score"],
+                "review_state": review_state,
+                "iso_score": round(float(score_map.get("iso_detector", 0.0)), 3),
+            }
+        )
+    rows = sorted(rows, key=lambda r: r["priority_score"], reverse=True)[: args.limit]
+    print(json.dumps(rows, indent=2))
+
+
 def cmd_launch_ui(args: argparse.Namespace) -> None:
     subprocess.run(["streamlit", "run", "src/celestial_triage/ui/dashboard.py"], check=False)
 
@@ -286,6 +310,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tags", default="", help="Comma-separated tags")
     p.add_argument("--notes", default="", help="Analyst notes")
     p.set_defaults(func=cmd_update_review)
+
+    p = sub.add_parser("followup-report", help="List candidates by follow-up priority")
+    p.add_argument("--limit", type=int, default=20, help="Max rows")
+    p.set_defaults(func=cmd_followup_report)
 
     p = sub.add_parser("launch-ui", help="Launch Streamlit dashboard")
     p.set_defaults(func=cmd_launch_ui)

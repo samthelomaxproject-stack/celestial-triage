@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from celestial_triage.scoring.followup import build_followup_priority
 from celestial_triage.scoring.iso_review import build_iso_review_signal
 
 DB_PATH = Path("celestial_triage.db")
@@ -170,6 +171,13 @@ if candidate_id:
         st.markdown("### ISO Review")
         iso_review = build_iso_review_signal(dict(feats) if feats else {}, [dict(s) for s in scores])
         st.json(iso_review)
+
+        st.markdown("### Follow-up Priority")
+        score_map = {r["detector_name"]: float(r["score"]) for r in scores}
+        followup = build_followup_priority(dict(feats) if feats else {}, score_map, (cand["review_status"] if cand else "new") or "new")
+        st.metric("Priority", followup["priority"].upper(), delta=str(followup["priority_score"]))
+        for reason in followup["reasons"]:
+            st.write(f"- {reason}")
 
         st.markdown("### Score reasons")
         for r in scores:
