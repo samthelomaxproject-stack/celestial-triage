@@ -2,10 +2,24 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import tkinter as tk
+import sys
 import webbrowser
 from pathlib import Path
-from tkinter import messagebox, ttk
+
+try:
+    import tkinter as tk
+    from tkinter import messagebox, ttk
+except Exception as exc:  # pragma: no cover
+    print("[celestial-triage] Tk runtime missing: unable to import tkinter/_tkinter.")
+    print("Install a Tk-capable Python runtime, then relaunch the desktop app.")
+    print("Suggested setup on macOS:")
+    print("  brew install python@3.12")
+    print("  brew install python-tk@3.12")
+    print("  python3.12 -m venv .venv312")
+    print("  source .venv312/bin/activate")
+    print("  pip install -r requirements.txt")
+    print(f"Details: {exc}")
+    sys.exit(1)
 
 from celestial_triage.config import DB_PATH
 from celestial_triage.macapp.runner import SafeCliRunner

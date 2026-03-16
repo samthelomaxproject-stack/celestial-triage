@@ -170,6 +170,24 @@ Location:
 - `src/celestial_triage/macapp/desktop.py`
 - `src/celestial_triage/macapp/runner.py`
 
+### Verified macOS runtime path
+
+This project has been verified with a Tk-capable Python 3.12 environment:
+
+```bash
+brew install python@3.12
+brew install python-tk@3.12
+
+python3.12 -m venv .venv312
+source .venv312/bin/activate
+pip install -r requirements.txt
+
+export PYTHONPATH=src
+python3 -m celestial_triage.macapp.desktop
+```
+
+> Note: some Python builds may not include `_tkinter` (for example `python@3.14` on this host during validation). Use the Tk-capable 3.12 runtime above if you see tkinter import errors.
+
 Launch:
 
 ```bash
@@ -333,6 +351,21 @@ Solution:
 Solution:
 ```bash
 python3 ...
+```
+
+### Problem: `ModuleNotFoundError: No module named '_tkinter'`
+Cause:
+- current Python build does not include Tk runtime bindings.
+
+Solution (verified):
+```bash
+brew install python@3.12
+brew install python-tk@3.12
+python3.12 -m venv .venv312
+source .venv312/bin/activate
+pip install -r requirements.txt
+export PYTHONPATH=src
+python3 -m celestial_triage.macapp.desktop
 ```
 
 ### Problem: image panel is empty
