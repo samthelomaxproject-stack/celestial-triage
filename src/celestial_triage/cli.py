@@ -18,6 +18,7 @@ from celestial_triage.detectors import (
 )
 from celestial_triage.features.extractor import extract_shared_features
 from celestial_triage.ingest.external_jsonl import JsonlExternalAdapter
+from celestial_triage.ingest.lasair_api import LasairApiAdapter
 from celestial_triage.ingest.mock_feed import MockFeedAdapter
 from celestial_triage.ingest.normalizer import normalize_event_safe
 from celestial_triage.models.entities import DetectorScore
@@ -45,12 +46,7 @@ def cmd_init_db(args: argparse.Namespace) -> None:
     LOGGER.info("Initialized DB at %s", DB_PATH)
 
 
-def cmd_seed_mock(args: argparse.Namespace) -> None:
-    db = Database(DB_PATH)
-    db.init()
-    feed = MockFeedAdapter(count=args.count)
-    events = feed.fetch_events()
-
+def _ingest_raw_events(db: Database, events: list, label: str) -> tuple[int, int, int]:
     accepted = 0
     skipped = 0
     for raw in events:
@@ -58,14 +54,24 @@ def cmd_seed_mock(args: argparse.Namespace) -> None:
         det, warnings = normalize_event_safe(raw)
         if det is None:
             skipped += 1
-            LOGGER.warning("Skipping mock event %s: %s", raw.raw_event_id, ",".join(warnings))
+            LOGGER.warning("Skipping %s record %s: %s", label, raw.raw_event_id, ",".join(warnings))
             continue
         if warnings:
-            LOGGER.info("Normalized mock event %s with warnings: %s", raw.raw_event_id, ",".join(warnings))
+            LOGGER.info("%s record %s normalized with warnings: %s", label, raw.raw_event_id, ",".join(warnings))
         db.insert_detection(det)
         accepted += 1
 
     n_candidates = db.rebuild_candidates_from_detections()
+    return accepted, skipped, n_candidates
+
+
+def cmd_seed_mock(args: argparse.Namespace) -> None:
+    db = Database(DB_PATH)
+    db.init()
+    feed = MockFeedAdapter(count=args.count)
+    events = feed.fetch_events()
+
+    accepted, skipped, n_candidates = _ingest_raw_events(db, events, "mock")
 
     LOGGER.info(
         "Seeded %d raw events (%d accepted, %d skipped), %d candidate groups",
@@ -86,24 +92,30 @@ def cmd_ingest_jsonl(args: argparse.Namespace) -> None:
         LOGGER.warning("No ingestible events found in %s", args.input)
         return
 
-    accepted = 0
-    skipped = 0
-    for raw in events:
-        db.insert_raw_event(raw)
-        det, warnings = normalize_event_safe(raw)
-        if det is None:
-            skipped += 1
-            LOGGER.warning("Skipping external record %s: %s", raw.raw_event_id, ",".join(warnings))
-            continue
-        if warnings:
-            LOGGER.info("External record %s normalized with warnings: %s", raw.raw_event_id, ",".join(warnings))
-        db.insert_detection(det)
-        accepted += 1
-
-    n_candidates = db.rebuild_candidates_from_detections()
+    accepted, skipped, n_candidates = _ingest_raw_events(db, events, "external")
     LOGGER.info(
         "Ingested JSONL %s (%d raw, %d accepted, %d skipped), %d candidates total",
         args.input,
+        len(events),
+        accepted,
+        skipped,
+        n_candidates,
+    )
+
+
+def cmd_ingest_lasair(args: argparse.Namespace) -> None:
+    db = Database(DB_PATH)
+    db.init()
+
+    adapter = LasairApiAdapter(token=args.token, query=args.query, limit=args.limit, days_back=args.days_back)
+    events = adapter.fetch_events()
+    if not events:
+        LOGGER.warning("No ingestible Lasair events returned")
+        return
+
+    accepted, skipped, n_candidates = _ingest_raw_events(db, events, "lasair")
+    LOGGER.info(
+        "Ingested Lasair (%d raw, %d accepted, %d skipped), %d candidates total",
         len(events),
         accepted,
         skipped,
@@ -230,6 +242,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--input", required=True, help="Path to JSONL input file")
     p.add_argument("--broker", default="external_jsonl", help="Broker/source name label")
     p.set_defaults(func=cmd_ingest_jsonl)
+
+    p = sub.add_parser("ingest-lasair", help="Ingest live Lasair API records")
+    p.add_argument("--limit", type=int, default=100, help="Max records to request")
+    p.add_argument("--query", type=str, default="objectId:*", help="Lasair query string")
+    p.add_argument("--days-back", type=int, default=3, help="Lookback window in days")
+    p.add_argument("--token", type=str, default=None, help="Optional Lasair token (or use LASAIR_API_TOKEN env)")
+    p.set_defaults(func=cmd_ingest_lasair)
 
     p = sub.add_parser("extract-features", help="Compute shared candidate features")
     p.set_defaults(func=cmd_extract_features)

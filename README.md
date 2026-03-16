@@ -51,6 +51,8 @@ Preferred keys:
 - optional brightness/motion/class fields (`mag`, `magpsf`, `moving`, `is_moving`, `class_label`, `confidence`, etc.)
 
 Records missing usable coordinates are skipped because they cannot be mapped into a normalized detection.
+
+Sample files under `sample_data/` are **demo records** for schema/ingestion validation unless otherwise noted.
 - **Shared features**: computed once per candidate
 - **Detectors**: independent weighted rule modules
 - **Retention policy**: Tier 1/2/3/4 assignment
@@ -95,6 +97,24 @@ This path is schema-hardened for imperfect inputs:
 - missing source identifiers are skipped with warnings
 - partial records use fallback normalization where possible
 - unusable records (e.g., missing/invalid coordinates) are skipped
+
+## Ingest from Lasair API (live external source)
+Set token:
+```bash
+export LASAIR_API_TOKEN="your_token_here"
+```
+
+Run:
+```bash
+python -m celestial_triage.cli ingest-lasair --limit 100 --query "objectId:*" --days-back 3
+# or pass token directly
+python -m celestial_triage.cli ingest-lasair --token "$LASAIR_API_TOKEN" --limit 50 --days-back 2
+```
+
+Behavior:
+- API failures and rate limits are handled gracefully with logs
+- malformed records are skipped safely through the normalization-safe pipeline
+- ingested detections flow into candidate linking, features, detector scoring, and retention via existing commands
 
 
 ## Run pipeline
