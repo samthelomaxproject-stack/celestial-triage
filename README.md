@@ -299,9 +299,11 @@ Typical files:
 ### Mac app image panel behavior
 
 The Mac app image panel:
+- auto-renders **all available images** for the selected candidate
 - shows broker image assets first when available
 - shows Pan-STARRS context image when available
 - shows SkyView DSS fallback when Pan-STARRS is unavailable
+- uses a vertical scrollbar for multi-image candidates
 - prefers local preview PNGs for in-app display
 - falls back to opening remote URLs when only remote links exist
 

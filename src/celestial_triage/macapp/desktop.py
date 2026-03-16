@@ -83,7 +83,7 @@ class AnalystConsoleApp(tk.Tk):
         self.selected_candidate_id: str | None = None
         self.command_history: list[dict] = []
         self._current_images: list[dict] = []
-        self._image_photo = None
+        self._image_photos: list[tk.PhotoImage] = []
 
         self._build_layout()
         self.refresh_all()
@@ -174,16 +174,27 @@ class AnalystConsoleApp(tk.Tk):
         )
 
         images_frame = ttk.LabelFrame(parent, text="Image Panel")
-        images_frame.grid(row=1, column=0, sticky="ew", pady=6)
+        images_frame.grid(row=1, column=0, sticky="nsew", pady=6)
         images_frame.columnconfigure(0, weight=1)
-        self.image_list = tk.Listbox(images_frame, height=8)
-        self.image_list.grid(row=0, column=0, sticky="ew")
-        self.image_list.bind("<<ListboxSelect>>", self.on_select_image)
-        self.image_preview_label = ttk.Label(images_frame, text="No preview selected")
-        self.image_preview_label.grid(row=1, column=0, sticky="ew", pady=4)
-        ttk.Button(images_frame, text="Open selected image URL", command=self.open_selected_image).grid(
-            row=2, column=0, sticky="ew", pady=4
-        )
+        images_frame.rowconfigure(0, weight=1)
+
+        self.image_canvas = tk.Canvas(images_frame, height=260, highlightthickness=0)
+        self.image_scroll = ttk.Scrollbar(images_frame, orient="vertical", command=self.image_canvas.yview)
+        self.image_canvas.configure(yscrollcommand=self.image_scroll.set)
+        self.image_canvas.grid(row=0, column=0, sticky="nsew")
+        self.image_scroll.grid(row=0, column=1, sticky="ns")
+
+        self.image_panel_container = ttk.Frame(self.image_canvas)
+        self.image_canvas_window = self.image_canvas.create_window((0, 0), window=self.image_panel_container, anchor="nw")
+
+        def _on_frame_configure(_event=None):
+            self.image_canvas.configure(scrollregion=self.image_canvas.bbox("all"))
+
+        def _on_canvas_configure(event):
+            self.image_canvas.itemconfigure(self.image_canvas_window, width=event.width)
+
+        self.image_panel_container.bind("<Configure>", _on_frame_configure)
+        self.image_canvas.bind("<Configure>", _on_canvas_configure)
 
         notebook = ttk.Notebook(parent)
         notebook.grid(row=2, column=0, sticky="nsew")
@@ -413,10 +424,9 @@ class AnalystConsoleApp(tk.Tk):
 
     def refresh_detail(self) -> None:
         self.detail_text.delete("1.0", tk.END)
-        self.image_list.delete(0, tk.END)
-        if hasattr(self, "image_preview_label"):
-            self.image_preview_label.configure(text="No preview selected", image="")
-            self._image_photo = None
+        for child in self.image_panel_container.winfo_children():
+            child.destroy()
+        self._image_photos = []
         cid = self.selected_candidate_id
         if not cid:
             return
@@ -451,41 +461,65 @@ class AnalystConsoleApp(tk.Tk):
         self.detail_text.insert("end", json.dumps(payload, indent=2))
 
         self._current_images = images
-        for img in images:
-            src = img.get("local_path") or img.get("remote_url", "")
-            label = "local-preview" if img.get("local_path") else "remote-url"
-            self.image_list.insert(
-                tk.END,
-                f"{img.get('kind','unknown')} | {label} | {src}"
+        self._image_photos = []
+        self._render_images_panel(images)
+
+    def _image_kind_label(self, kind: str) -> str:
+        mapping = {
+            "science": "Science",
+            "reference": "Reference",
+            "difference": "Difference",
+            "survey_context_panstarrs": "Survey Context (Pan-STARRS)",
+            "survey_context_skyview": "Survey Context (SkyView DSS)",
+        }
+        return mapping.get(kind, kind)
+
+    def _render_images_panel(self, images: list[dict]) -> None:
+        if not images:
+            ttk.Label(self.image_panel_container, text="No images available for selected candidate").grid(
+                row=0, column=0, sticky="w", padx=4, pady=6
             )
+            return
 
-    def on_select_image(self, _event=None) -> None:
-        idx = self.image_list.curselection()
-        if not idx:
-            return
-        img = self._current_images[idx[0]]
-        local_path = img.get("local_path")
-        if local_path and Path(local_path).exists():
-            try:
-                self._image_photo = tk.PhotoImage(file=local_path)
-                self.image_preview_label.configure(image=self._image_photo, text="")
-                return
-            except Exception:
-                pass
-        self.image_preview_label.configure(text="No local preview available", image="")
-        self._image_photo = None
+        row_idx = 0
+        for img in images:
+            kind = str(img.get("kind") or "unknown")
+            header = ttk.Label(
+                self.image_panel_container,
+                text=self._image_kind_label(kind),
+                font=("SF Pro Text", 11, "bold"),
+            )
+            header.grid(row=row_idx, column=0, sticky="w", padx=4, pady=(6, 2))
+            row_idx += 1
 
-    def open_selected_image(self) -> None:
-        idx = self.image_list.curselection()
-        if not idx:
-            return
-        img = self._current_images[idx[0]]
-        if img.get("local_path") and Path(img["local_path"]).exists():
-            webbrowser.open(f"file://{img['local_path']}")
-            return
-        url = img.get("remote_url")
-        if url and str(url).startswith(("http://", "https://")):
-            webbrowser.open(url)
+            local_path = img.get("local_path")
+            remote_url = img.get("remote_url")
+
+            rendered = False
+            if local_path and Path(local_path).exists():
+                try:
+                    photo = tk.PhotoImage(file=local_path)
+                    self._image_photos.append(photo)
+                    lbl = ttk.Label(self.image_panel_container, image=photo)
+                    lbl.grid(row=row_idx, column=0, sticky="w", padx=8)
+                    rendered = True
+                except Exception:
+                    rendered = False
+
+            if not rendered:
+                fallback_text = f"No local preview\n{remote_url or 'No remote URL'}"
+                ttk.Label(self.image_panel_container, text=fallback_text).grid(
+                    row=row_idx, column=0, sticky="w", padx=8
+                )
+
+            btns = ttk.Frame(self.image_panel_container)
+            btns.grid(row=row_idx + 1, column=0, sticky="w", padx=8, pady=(2, 8))
+            if local_path and Path(local_path).exists():
+                ttk.Button(btns, text="Open Local", command=lambda p=local_path: webbrowser.open(f"file://{p}")).pack(side=tk.LEFT)
+            if remote_url and str(remote_url).startswith(("http://", "https://")):
+                ttk.Button(btns, text="Open Remote", command=lambda u=remote_url: webbrowser.open(str(u))).pack(side=tk.LEFT, padx=6)
+
+            row_idx += 2
 
 
 def main() -> None:
