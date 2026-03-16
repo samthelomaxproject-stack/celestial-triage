@@ -34,9 +34,10 @@ class AnalystConsoleApp(tk.Tk):
         self.title("Celestial Triage — Mac Analyst Console")
         self.geometry("1480x920")
 
-        self.db_path = DB_PATH
+        self.repo_root = Path(__file__).resolve().parents[3]
+        self.db_path = self.repo_root / DB_PATH
         self.db = Database(self.db_path)
-        self.runner = SafeCliRunner("python3")
+        self.runner = SafeCliRunner()
 
         self.candidates: list[dict] = []
         self.selected_candidate_id: str | None = None
@@ -271,7 +272,7 @@ class AnalystConsoleApp(tk.Tk):
     def run_command(self, name: str, params: dict) -> None:
         preview = self.runner.preview(name, params)
         self.log(f"\n[{name}] preview: {preview}")
-        result = self.runner.run(name, params, cwd=Path.cwd())
+        result = self.runner.run(name, params, cwd=self.repo_root)
         self.command_history.append({"name": name, "success": result.success, "at": result.ran_at})
         self.log(f"[{name}] success={result.success} rc={result.return_code} at={result.ran_at}")
         if result.stdout.strip():

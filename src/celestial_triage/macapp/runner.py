@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,8 +37,20 @@ class CommandResult:
 
 
 class SafeCliRunner:
-    def __init__(self, python_bin: str = "python3") -> None:
-        self.python_bin = python_bin
+    def __init__(self, python_bin: str | None = None) -> None:
+        self.python_bin = python_bin or self._resolve_python_bin()
+
+    @staticmethod
+    def _resolve_python_bin() -> str:
+        env_override = os.getenv("CELESTIAL_TRIAGE_PYTHON", "").strip()
+        if env_override:
+            return env_override
+
+        exe = (sys.executable or "").strip()
+        if exe and "python" in Path(exe).name.lower():
+            return exe
+
+        return "python3"
 
     def build_args(self, command: str, params: dict[str, Any]) -> list[str]:
         if command not in APPROVED_COMMANDS:
@@ -109,7 +123,10 @@ class SafeCliRunner:
 
     def run(self, command: str, params: dict[str, Any], cwd: Path | None = None) -> CommandResult:
         args = self.build_args(command, params)
-        proc = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
+        env = os.environ.copy()
+        if cwd and "PYTHONPATH" not in env and (cwd / "src").exists():
+            env["PYTHONPATH"] = "src"
+        proc = subprocess.run(args, cwd=cwd, env=env, capture_output=True, text=True)
         return CommandResult(
             name=command,
             args=args,
