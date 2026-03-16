@@ -208,6 +208,22 @@ if candidate_id:
         else:
             st.info("No retention decision yet. Run `assign-retention`.")
 
+        st.markdown("### Export-ready summary")
+        st.json(
+            {
+                "candidate_id": candidate_id,
+                "review_state": (cand["review_status"] if cand else "new") if cand else "new",
+                "tags": (cand["tags"] if cand else "") if cand else "",
+                "notes": (cand["notes"] if cand else "") if cand else "",
+                "iso_score": round(float(pivot.get("iso_detector", 0.0)), 3),
+                "followup_priority": followup["priority"],
+                "retention_tier": (retention_row["retention_tier"] if retention_row else ""),
+                "first_seen": (feats["first_seen"] if feats else "") if feats else "",
+                "last_seen": (feats["last_seen"] if feats else "") if feats else "",
+                "detection_count": int((feats["detection_count"] if feats else 0) or 0),
+            }
+        )
+
     with c2:
         st.markdown("### Review workflow")
         current_state = (cand["review_status"] if cand else "new") or "new"

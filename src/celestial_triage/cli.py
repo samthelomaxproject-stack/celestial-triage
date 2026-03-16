@@ -228,15 +228,30 @@ def cmd_assign_retention(args: argparse.Namespace) -> None:
     LOGGER.info("Retention assignment complete")
 
 
-def _export_rows(rows: list[dict[str, Any]], fmt: str, output: Path) -> None:
+def _write_rows(rows: list[dict[str, Any]], fmt: str, output: Path, fieldnames: list[str] | None = None) -> None:
     if fmt == "json":
         output.write_text(json.dumps(rows, indent=2))
     elif fmt == "csv":
+        if not fieldnames:
+            fieldnames = sorted({k for r in rows for k in r.keys()}) if rows else []
         with output.open("w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=["candidate_id", "max_score"])
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             for r in rows:
                 writer.writerow(r)
+    elif fmt == "md":
+        lines = ["# Candidate Export", ""]
+        for r in rows:
+            lines.append(f"## {r.get('candidate_id','unknown')}")
+            lines.append(f"- Review: {r.get('review_state','new')}")
+            lines.append(f"- Follow-up: {r.get('followup_priority','low')} ({r.get('followup_score',0)})")
+            lines.append(f"- ISO score: {r.get('iso_score',0)}")
+            lines.append(f"- Retention: {r.get('retention_tier','')}")
+            lines.append(f"- Provenance: {r.get('provenance_summary','')}")
+            lines.append(f"- Tags: {r.get('tags','')}")
+            lines.append(f"- Notes: {r.get('notes','')}")
+            lines.append("")
+        output.write_text("\n".join(lines))
     else:
         raise ValueError(f"Unsupported export format: {fmt}")
 
@@ -248,7 +263,7 @@ def cmd_top(args: argparse.Namespace) -> None:
         print(f"{r['candidate_id']}\t{r['max_score']:.3f}")
 
     if args.export and args.output:
-        _export_rows(rows, args.export, Path(args.output))
+        _write_rows(rows, args.export, Path(args.output), fieldnames=["candidate_id", "max_score"])
         LOGGER.info("Exported %d candidates to %s", len(rows), args.output)
 
 
@@ -291,6 +306,131 @@ def cmd_followup_report(args: argparse.Namespace) -> None:
         )
     rows = sorted(rows, key=lambda r: r["priority_score"], reverse=True)[: args.limit]
     print(json.dumps(rows, indent=2))
+
+
+def build_export_rows(
+    db: Database,
+    review_state: str | None = None,
+    followup_priority: str | None = None,
+    detector_presence: str | None = None,
+    high_iso_only: bool = False,
+    tagged_only: bool = False,
+    broker: str | None = None,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for cid in db.list_candidate_ids():
+        cand = db.get_candidate_with_features(cid)
+        features = cand.get("features", {})
+        scores = db.get_latest_scores(cid)
+        score_map = {s["detector_name"]: float(s["score"]) for s in scores}
+
+        state = str(cand.get("review_status") or "new")
+        if review_state and state != review_state:
+            continue
+
+        tags = str(cand.get("tags") or "")
+        if tagged_only and not tags.strip():
+            continue
+
+        if detector_presence and detector_presence not in score_map:
+            continue
+
+        iso_score = float(score_map.get("iso_detector", 0.0))
+        if high_iso_only and iso_score < 0.7:
+            continue
+
+        with db.conn() as c:
+            det_rows = c.execute(
+                """
+                SELECT d.broker_name, COUNT(*) as n
+                FROM detections d
+                JOIN candidate_detections cd ON cd.detection_id=d.detection_id
+                WHERE cd.candidate_id=?
+                GROUP BY d.broker_name
+                """,
+                (cid,),
+            ).fetchall()
+            retention_row = c.execute(
+                "SELECT retention_tier FROM archive_policies WHERE candidate_id=?",
+                (cid,),
+            ).fetchone()
+
+        provenance = {r["broker_name"]: int(r["n"]) for r in det_rows}
+        if broker and broker not in provenance:
+            continue
+
+        followup = build_followup_priority(features, score_map, state)
+        if followup_priority and followup["priority"] != followup_priority:
+            continue
+
+        first_seen = str(cand.get("first_seen") or features.get("first_seen") or "")
+        last_seen = str(cand.get("last_seen") or features.get("last_seen") or "")
+        detection_count = int(cand.get("detection_count") or features.get("detection_count") or 0)
+
+        row = {
+            "candidate_id": cid,
+            "review_state": state,
+            "tags": tags,
+            "notes": str(cand.get("notes") or ""),
+            "detector_scores": score_map,
+            "iso_score": round(iso_score, 3),
+            "followup_priority": followup["priority"],
+            "followup_score": followup["priority_score"],
+            "followup_reasons": "; ".join(followup["reasons"]),
+            "retention_tier": (retention_row["retention_tier"] if retention_row else ""),
+            "provenance_summary": ", ".join([f"{k}:{v}" for k, v in provenance.items()]),
+            "first_seen": first_seen,
+            "last_seen": last_seen,
+            "detection_count": detection_count,
+        }
+        out.append(row)
+    return out
+
+
+def cmd_export_candidates(args: argparse.Namespace) -> None:
+    db = Database(DB_PATH)
+    rows = build_export_rows(
+        db,
+        review_state=args.review_state,
+        followup_priority=args.followup_priority,
+        detector_presence=args.detector,
+        high_iso_only=args.high_iso,
+        tagged_only=args.tagged_only,
+        broker=args.broker,
+    )
+
+    output = Path(args.output)
+    if args.format == "csv":
+        csv_rows = []
+        for r in rows:
+            flat = dict(r)
+            flat["detector_scores"] = json.dumps(flat["detector_scores"])
+            csv_rows.append(flat)
+        _write_rows(
+            csv_rows,
+            "csv",
+            output,
+            fieldnames=[
+                "candidate_id",
+                "review_state",
+                "tags",
+                "notes",
+                "iso_score",
+                "followup_priority",
+                "followup_score",
+                "followup_reasons",
+                "retention_tier",
+                "provenance_summary",
+                "first_seen",
+                "last_seen",
+                "detection_count",
+                "detector_scores",
+            ],
+        )
+    else:
+        _write_rows(rows, args.format, output)
+
+    LOGGER.info("Exported %d candidates to %s (%s)", len(rows), output, args.format)
 
 
 def cmd_launch_ui(args: argparse.Namespace) -> None:
@@ -358,6 +498,17 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("followup-report", help="List candidates by follow-up priority")
     p.add_argument("--limit", type=int, default=20, help="Max rows")
     p.set_defaults(func=cmd_followup_report)
+
+    p = sub.add_parser("export-candidates", help="Export reviewed/triage candidate handoff data")
+    p.add_argument("--format", choices=["json", "csv", "md"], required=True)
+    p.add_argument("--output", required=True, help="Output file path")
+    p.add_argument("--review-state", choices=["new", "reviewing", "follow-up", "dismissed"], default=None)
+    p.add_argument("--followup-priority", choices=["low", "medium", "high", "urgent"], default=None)
+    p.add_argument("--detector", default=None, help="Require detector presence (e.g. iso_detector)")
+    p.add_argument("--high-iso", action="store_true", help="Only include ISO score >= 0.7")
+    p.add_argument("--tagged-only", action="store_true", help="Only include candidates with tags")
+    p.add_argument("--broker", default=None, help="Only include candidates seen from this broker/source")
+    p.set_defaults(func=cmd_export_candidates)
 
     p = sub.add_parser("launch-ui", help="Launch Streamlit dashboard")
     p.set_defaults(func=cmd_launch_ui)

@@ -168,6 +168,22 @@ python -m celestial_triage.cli update-review --candidate-id <ID> --state reviewi
 python -m celestial_triage.cli followup-report --limit 20
 ```
 
+### Reviewed candidate export / analyst handoff
+```bash
+python -m celestial_triage.cli export-candidates --format json --output handoff.json --review-state follow-up
+python -m celestial_triage.cli export-candidates --format csv --output handoff.csv --high-iso --tagged-only
+python -m celestial_triage.cli export-candidates --format md --output handoff.md --detector iso_detector --followup-priority high
+```
+
+Supported export filters:
+- `--review-state`
+- `--followup-priority`
+- `--detector`
+- `--high-iso`
+- `--tagged-only`
+- `--broker`
+
+
 ## Launch UI
 ```bash
 python -m celestial_triage.cli launch-ui
