@@ -312,6 +312,9 @@ def cmd_ingest_lasair(args: argparse.Namespace) -> None:
         selected=selected,
         tables=tables,
         conditions=conditions,
+        batch_size=getattr(args, "batch_size", 25),
+        request_delay=getattr(args, "request_delay", 2.0),
+        max_retries=getattr(args, "max_retries", 3),
     )
     events = adapter.fetch_events()
     if not events:
@@ -772,7 +775,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--preset", choices=sorted(PRESETS.keys()), default=None, help="Optional query preset")
     p.add_argument("--lasair-mode", choices=["ztf", "lsst"], default="ztf", help="Lasair broker request mode")
     p.add_argument("--base-url", type=str, default=None, help="Lasair API base URL (or use LASAIR_API_BASE_URL env)")
-    p.add_argument("--limit", type=int, default=None, help="Max records to request")
+    p.add_argument("--limit", type=int, default=None, help="Total records requested across batched broker calls")
+    p.add_argument("--batch-size", type=int, default=25, help="Records requested per broker call")
+    p.add_argument("--request-delay", type=float, default=2.0, help="Delay seconds between broker calls")
+    p.add_argument("--max-retries", type=int, default=3, help="Max retries on HTTP 429 with exponential backoff")
     p.add_argument("--query", type=str, default="", help="Lasair query string for ztf mode (overrides preset query)")
     p.add_argument("--days-back", type=int, default=None, help="Lookback window in days for ztf mode")
     p.add_argument("--selected", type=str, default="", help="LSST mode SELECT list")

@@ -1,4 +1,5 @@
 import os
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import quote
@@ -35,6 +36,9 @@ class LasairApiAdapter(BrokerAdapter):
         selected: str = "",
         tables: str = "",
         conditions: str = "",
+        batch_size: int = 25,
+        request_delay: float = 2.0,
+        max_retries: int = 3,
     ) -> None:
         self.token = token or os.getenv("LASAIR_API_TOKEN", "")
         self.query = query
@@ -49,6 +53,9 @@ class LasairApiAdapter(BrokerAdapter):
         self.selected = selected.strip()
         self.tables = tables.strip()
         self.conditions = conditions.strip()
+        self.batch_size = max(1, min(200, int(batch_size)))
+        self.request_delay = max(0.0, float(request_delay))
+        self.max_retries = max(0, int(max_retries))
 
     def _extract_list(self, payload: Any) -> list[dict[str, Any]]:
         if isinstance(payload, list):
@@ -93,7 +100,7 @@ class LasairApiAdapter(BrokerAdapter):
                 continue
         return datetime.now(timezone.utc)
 
-    def _build_request(self) -> tuple[str, dict[str, str], dict[str, Any]]:
+    def _build_request(self, request_limit: int) -> tuple[str, dict[str, str], dict[str, Any]]:
         url = f"{self.base_url}/query/"
         headers = {"Authorization": f"Token {self.token}", "Content-Type": "application/json"}
 
@@ -105,13 +112,14 @@ class LasairApiAdapter(BrokerAdapter):
                 "selected": selected,
                 "tables": tables,
                 "conditions": conditions,
+                "limit": request_limit,
             }
             return url, headers, body
 
         since = (datetime.now(timezone.utc) - timedelta(days=self.days_back)).isoformat()
         body = {
             "query": self.query,
-            "limit": self.limit,
+            "limit": request_limit,
             "since": since,
         }
         return url, headers, body
@@ -173,62 +181,122 @@ class LasairApiAdapter(BrokerAdapter):
 
         return None
 
+    def _post_with_retries(self, url: str, headers: dict[str, str], body: dict[str, Any]) -> requests.Response | None:
+        attempt = 0
+        delay = max(1.0, self.request_delay or 1.0)
+        while True:
+            try:
+                resp = requests.post(url, json=body, headers=headers, timeout=30)
+            except requests.RequestException as exc:
+                LOGGER.error("Lasair request failed: %s", exc)
+                return None
+
+            if resp.status_code != 429:
+                return resp
+
+            if attempt >= self.max_retries:
+                LOGGER.warning("Lasair rate limited (HTTP 429). retries exhausted=%d", self.max_retries)
+                return resp
+
+            wait_s = delay * (2**attempt)
+            LOGGER.info("Lasair 429 backoff: attempt=%d wait=%.1fs", attempt + 1, wait_s)
+            time.sleep(wait_s)
+            attempt += 1
+
     def fetch_events(self) -> list[RawEvent]:
         if not self.token:
             LOGGER.warning("LASAIR_API_TOKEN missing; skipping live Lasair ingestion")
             return []
 
-        url, headers, body = self._build_request()
+        requested_total = self.limit
+        batch_size = min(self.batch_size, requested_total)
+        LOGGER.info(
+            "Lasair batched ingest: total=%d batch_size=%d delay=%.1fs max_retries=%d",
+            requested_total,
+            batch_size,
+            self.request_delay,
+            self.max_retries,
+        )
 
-        try:
-            resp = requests.post(url, json=body, headers=headers, timeout=30)
-        except requests.RequestException as exc:
-            LOGGER.error("Lasair request failed: %s", exc)
-            return []
-
-        if resp.status_code in (401, 403):
-            LOGGER.error("Lasair auth/permission error: HTTP %s", resp.status_code)
-            return []
-        if resp.status_code == 429:
-            LOGGER.warning("Lasair rate limited (HTTP 429). Try again later.")
-            return []
-        if resp.status_code >= 400:
-            LOGGER.error("Lasair API error HTTP %s: %s", resp.status_code, resp.text[:200])
-            return []
-
-        try:
-            payload = resp.json()
-        except ValueError:
-            LOGGER.error("Lasair API returned non-JSON payload")
-            return []
-
-        rows = self._extract_list(payload)
-        if len(rows) > self.limit:
-            rows = rows[: self.limit]
-
+        seen_ids: set[str] = set()
         events: list[RawEvent] = []
-        for row in rows:
-            source_id = str(
-                row.get("source_id")
-                or row.get("objectId")
-                or row.get("oid")
-                or row.get("diaObjectId")
-                or ""
+        batch_index = 0
+        target_batches = max(1, (requested_total + batch_size - 1) // batch_size)
+
+        while len(events) < requested_total and batch_index < target_batches:
+            remaining = requested_total - len(events)
+            request_limit = min(batch_size, remaining)
+            url, headers, body = self._build_request(request_limit)
+            LOGGER.info(
+                "Lasair batch %d/%d: request_limit=%d collected=%d/%d",
+                batch_index + 1,
+                target_batches,
+                request_limit,
+                len(events),
+                requested_total,
             )
-            if not source_id:
-                LOGGER.warning("Skipping Lasair row without source id")
-                continue
-            ts = self._extract_timestamp(row)
-            raw_event_id = str(row.get("raw_event_id") or row.get("candid") or f"{source_id}-{ts.isoformat()}")
-            events.append(
-                RawEvent(
-                    raw_event_id=raw_event_id,
-                    broker_name="lasair_api",
-                    source_id=source_id,
-                    timestamp=ts,
-                    payload=row,
+
+            resp = self._post_with_retries(url, headers, body)
+            if resp is None:
+                break
+
+            if resp.status_code in (401, 403):
+                LOGGER.error("Lasair auth/permission error: HTTP %s", resp.status_code)
+                break
+            if resp.status_code == 429:
+                break
+            if resp.status_code >= 400:
+                LOGGER.error("Lasair API error HTTP %s: %s", resp.status_code, resp.text[:200])
+                break
+
+            try:
+                payload = resp.json()
+            except ValueError:
+                LOGGER.error("Lasair API returned non-JSON payload")
+                break
+
+            rows = self._extract_list(payload)
+            if not rows:
+                break
+
+            new_in_batch = 0
+            for row in rows:
+                source_id = str(
+                    row.get("source_id")
+                    or row.get("objectId")
+                    or row.get("oid")
+                    or row.get("diaObjectId")
+                    or ""
                 )
-            )
+                if not source_id:
+                    LOGGER.warning("Skipping Lasair row without source id")
+                    continue
+                ts = self._extract_timestamp(row)
+                raw_event_id = str(row.get("raw_event_id") or row.get("candid") or f"{source_id}-{ts.isoformat()}")
+                dedupe_key = raw_event_id or source_id
+                if dedupe_key in seen_ids:
+                    continue
+                seen_ids.add(dedupe_key)
+                events.append(
+                    RawEvent(
+                        raw_event_id=raw_event_id,
+                        broker_name="lasair_api",
+                        source_id=source_id,
+                        timestamp=ts,
+                        payload=row,
+                    )
+                )
+                new_in_batch += 1
+                if len(events) >= requested_total:
+                    break
+
+            if new_in_batch == 0:
+                LOGGER.info("Lasair batch %d yielded no new rows; stopping early", batch_index + 1)
+                break
+
+            batch_index += 1
+            if len(events) < requested_total and batch_index < target_batches and self.request_delay > 0:
+                time.sleep(self.request_delay)
 
         LOGGER.info("Fetched %d Lasair raw events", len(events))
         return events

@@ -113,6 +113,7 @@ def test_lasair_adapter_builds_lsst_payload(monkeypatch):
         "selected": "diaObjectId, ra, decl",
         "tables": "objects",
         "conditions": "1=1",
+        "limit": 10,
     }
     assert len(events) == 1
     assert events[0].source_id == "170032882292621441"
@@ -153,3 +154,48 @@ def test_lasair_object_detail_lsst_query_fallback(monkeypatch):
     assert detail is not None
     assert detail.get("diaObjectId") == "1700"
     assert observed["body"]["conditions"] == "diaObjectId='1700'"
+
+
+def test_lasair_batched_fetch_respects_total_limit(monkeypatch):
+    calls = {"n": 0}
+
+    def fake_post(url, **kwargs):
+        calls["n"] += 1
+        body = kwargs.get("json") or {}
+        lim = int(body.get("limit") or 0)
+        rows = [
+            {
+                "diaObjectId": f"{calls['n']}-{i}",
+                "midpointMjdTai": 61000.0 + i,
+            }
+            for i in range(lim)
+        ]
+        return _FakeResp(200, rows)
+
+    monkeypatch.setattr("celestial_triage.ingest.lasair_api.requests.post", fake_post)
+    monkeypatch.setattr("celestial_triage.ingest.lasair_api.time.sleep", lambda *_: None)
+
+    adapter = LasairApiAdapter(token="tok", lasair_mode="lsst", limit=12, batch_size=5, request_delay=0)
+    events = adapter.fetch_events()
+    assert len(events) == 12
+    assert calls["n"] == 3
+
+
+def test_lasair_backoff_retries_on_429(monkeypatch):
+    calls = {"n": 0}
+
+    def fake_post(url, **kwargs):
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            return _FakeResp(429, {"detail": "rate limit"})
+        return _FakeResp(200, [{"diaObjectId": "ok-1", "midpointMjdTai": 61000.0}])
+
+    sleeps = []
+    monkeypatch.setattr("celestial_triage.ingest.lasair_api.requests.post", fake_post)
+    monkeypatch.setattr("celestial_triage.ingest.lasair_api.time.sleep", lambda s: sleeps.append(s))
+
+    adapter = LasairApiAdapter(token="tok", lasair_mode="lsst", limit=1, batch_size=1, request_delay=1, max_retries=3)
+    events = adapter.fetch_events()
+    assert len(events) == 1
+    assert calls["n"] == 3
+    assert sleeps[:2] == [1.0, 2.0]

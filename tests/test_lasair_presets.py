@@ -40,6 +40,9 @@ def test_cli_lasair_mode_and_base_url_arguments():
     assert args.tables == "objects"
     assert args.conditions == "1=1"
     assert args.fetch_cutouts is True
+    assert args.batch_size == 25
+    assert args.request_delay == 2.0
+    assert args.max_retries == 3
 
 
 def test_presets_exist_for_required_categories():

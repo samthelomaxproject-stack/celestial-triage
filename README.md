@@ -166,6 +166,29 @@ python3 -m celestial_triage.cli ingest-lasair \
   --fetch-cutouts
 ```
 
+### Higher total ingest with spaced requests
+
+`--limit` is the **total desired** results. The ingest path internally batches and spaces requests:
+
+- `--batch-size`: per-request size
+- `--request-delay`: seconds between broker requests
+- `--max-retries`: 429 backoff retry count (exponential)
+
+Example (total 50, 5 requests of 10, 3s spacing):
+
+```bash
+python3 -m celestial_triage.cli ingest-lasair \
+  --lasair-mode lsst \
+  --base-url https://lasair.lsst.ac.uk/api \
+  --selected "*" \
+  --tables objects \
+  --conditions "1=1" \
+  --limit 50 \
+  --batch-size 10 \
+  --request-delay 3 \
+  --max-retries 3
+```
+
 ### Token requirements
 
 Tokens are broker/domain scoped. A token from one broker UI may fail against the other domain.
