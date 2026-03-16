@@ -7,6 +7,17 @@ This project ingests Rubin-style/broker alert-like data, normalizes detections i
 
 **Important:** This system does not claim extraordinary identification. It is a triage and prioritization tool.
 
+## What currently works (validated)
+- Mock broker ingestion
+- Normalization into canonical detections
+- Candidate grouping and shared feature extraction
+- Six detector modules with transparent scoring + reasons
+- Score persistence in SQLite
+- Retention tier assignment (`hot`, `warm`, `cold`, `disposable`)
+- Streamlit triage dashboard
+- CLI workflow + export of top candidates (`csv` / `json`)
+- One-command smoke test script
+
 ## Why layered triage
 - Ingest once
 - Normalize once
@@ -41,7 +52,7 @@ Retention tiers:
 
 Policy decisions use detector maxima, detection evidence, review state, poor catalog match, and hyperbolic/anomaly placeholders.
 
-## Setup
+## Setup / install
 ```bash
 python -m venv .venv
 source .venv/bin/activate
@@ -49,35 +60,64 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-## Quickstart (mock runnable)
+## Initialize DB
 ```bash
 python -m celestial_triage.cli init-db
-python -m celestial_triage.cli seed-mock --count 200
-python -m celestial_triage.cli run-pipeline
-python -m celestial_triage.cli top-candidates --limit 20
-python -m celestial_triage.cli launch-ui
 ```
 
-## CLI commands
+## Seed mock data
+```bash
+python -m celestial_triage.cli seed-mock --count 200
+```
+
+## Run pipeline
+```bash
+python -m celestial_triage.cli run-pipeline
+```
+
+## List top candidates
+```bash
+python -m celestial_triage.cli top-candidates --limit 20
+```
+
+### Export top candidates
+```bash
+python -m celestial_triage.cli top-candidates --limit 50 --export csv --output top_candidates.csv
+python -m celestial_triage.cli top-candidates --limit 50 --export json --output top_candidates.json
+```
+
+## Launch UI
+```bash
+python -m celestial_triage.cli launch-ui
+# or directly:
+streamlit run src/celestial_triage/ui/dashboard.py
+```
+
+## One-command smoke test
+```bash
+./scripts/smoke_test.sh
+```
+
+## CLI help
 ```bash
 python -m celestial_triage.cli --help
 ```
 
-## UI
-```bash
-streamlit run src/celestial_triage/ui/dashboard.py
-```
+## Lightweight developer tooling
+- `ruff` and `black` config is in `pyproject.toml`
+- `pytest` config is in `pyproject.toml`
 
-## Current limitations
+## Known limitations
 - Uses mock feed only (no live broker integration yet)
 - Orbit fitting/hyperbolic logic are placeholders
 - Rule-based scoring only (transparent, non-ML v1)
+- UI is intentionally minimal for analyst workflow validation
 
-## Roadmap
-- Real Rubin broker adapters
-- Better tracklet/orbit features
-- PostgreSQL migration path
-- Alert subscriptions + collaborative analyst workflows
+## Next steps
+- Add first real broker adapter implementation
+- Improve orbital features and temporal linking
+- Add migration tooling for PostgreSQL
+- Add richer analyst review/audit workflow
 
 ## Disclaimer
 This system ranks unusual astronomical candidates for review. It does **not** assert extraordinary identifications or definitive classifications.

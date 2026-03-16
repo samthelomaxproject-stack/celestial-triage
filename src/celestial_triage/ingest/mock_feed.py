@@ -7,28 +7,94 @@ from celestial_triage.models.entities import RawEvent
 
 
 class MockFeedAdapter(BrokerAdapter):
+    """Mock feed with archetypes to produce varied detector outcomes for demos/tests."""
+
+    ARCHETYPES = ["satellite_like", "neo_like", "kbo_like", "iso_like", "anomaly_like", "mixed"]
+
     def __init__(self, count: int = 100, broker_name: str = "mock_broker") -> None:
         self.count = count
         self.broker_name = broker_name
 
+    def _payload_for_archetype(self, archetype: str) -> dict:
+        if archetype == "satellite_like":
+            return {
+                "ra": random.uniform(0, 360),
+                "dec": random.uniform(-45, 45),
+                "mag": random.uniform(12, 18),
+                "mag_change": random.uniform(0.5, 2.0),
+                "moving": True,
+                "class_label": "artifact",
+                "class_confidence": random.uniform(0.1, 0.4),
+                "catalog_match": random.choice(["poor_match", "no_match"]),
+            }
+        if archetype == "neo_like":
+            return {
+                "ra": random.uniform(0, 360),
+                "dec": random.uniform(-60, 60),
+                "mag": random.uniform(16, 21),
+                "mag_change": random.uniform(0.2, 1.2),
+                "moving": True,
+                "class_label": "asteroid",
+                "class_confidence": random.uniform(0.4, 0.8),
+                "catalog_match": random.choice(["matched", "poor_match"]),
+            }
+        if archetype == "kbo_like":
+            return {
+                "ra": random.uniform(0, 360),
+                "dec": random.uniform(-20, 20),
+                "mag": random.uniform(21, 25),
+                "mag_change": random.uniform(-0.3, 0.3),
+                "moving": random.random() > 0.35,
+                "class_label": "unknown",
+                "class_confidence": random.uniform(0.3, 0.6),
+                "catalog_match": random.choice(["matched", "poor_match"]),
+            }
+        if archetype == "iso_like":
+            return {
+                "ra": random.uniform(0, 360),
+                "dec": random.uniform(-70, 70),
+                "mag": random.uniform(17, 23),
+                "mag_change": random.uniform(0.8, 2.5),
+                "moving": True,
+                "class_label": "unknown",
+                "class_confidence": random.uniform(0.1, 0.5),
+                "catalog_match": random.choice(["poor_match", "no_match"]),
+            }
+        if archetype == "anomaly_like":
+            return {
+                "ra": random.uniform(0, 360),
+                "dec": random.uniform(-90, 90),
+                "mag": random.uniform(15, 24),
+                "mag_change": random.uniform(-2.5, 2.5),
+                "moving": random.random() > 0.5,
+                "class_label": random.choice(["unknown", "variable"]),
+                "class_confidence": random.uniform(0.0, 0.35),
+                "catalog_match": random.choice(["matched", "poor_match", "no_match"]),
+            }
+        return {
+            "ra": random.uniform(0, 360),
+            "dec": random.uniform(-90, 90),
+            "mag": random.uniform(14, 24),
+            "mag_change": random.uniform(-1.5, 1.5),
+            "moving": random.random() > 0.55,
+            "class_label": random.choice(["unknown", "asteroid", "variable", "artifact"]),
+            "class_confidence": random.random(),
+            "catalog_match": random.choice(["matched", "poor_match", "no_match"]),
+        }
+
     def fetch_events(self) -> list[RawEvent]:
         now = datetime.now(timezone.utc)
         events: list[RawEvent] = []
-        source_pool = [f"SRC-{i:04d}" for i in range(max(10, self.count // 4))]
+
+        source_count = max(12, self.count // 6)
+        source_pool = [f"SRC-{i:04d}" for i in range(source_count)]
+        source_archetype = {sid: self.ARCHETYPES[i % len(self.ARCHETYPES)] for i, sid in enumerate(source_pool)}
 
         for _ in range(self.count):
             source_id = random.choice(source_pool)
-            ts = now - timedelta(minutes=random.randint(0, 60 * 24 * 7))
-            payload = {
-                "ra": random.uniform(0, 360),
-                "dec": random.uniform(-90, 90),
-                "mag": random.uniform(14, 24),
-                "mag_change": random.uniform(-2.5, 2.5),
-                "moving": random.random() > 0.55,
-                "class_label": random.choice(["unknown", "asteroid", "variable", "artifact"]),
-                "class_confidence": random.random(),
-                "catalog_match": random.choice(["matched", "poor_match", "no_match"]),
-            }
+            archetype = source_archetype[source_id]
+            ts = now - timedelta(minutes=random.randint(0, 60 * 24 * 10))
+            payload = self._payload_for_archetype(archetype)
             events.append(
                 RawEvent(
                     raw_event_id=str(uuid.uuid4()),
@@ -38,4 +104,5 @@ class MockFeedAdapter(BrokerAdapter):
                     payload=payload,
                 )
             )
+
         return events

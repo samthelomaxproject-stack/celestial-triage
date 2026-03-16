@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from pathlib import Path
 
@@ -9,17 +10,31 @@ st.set_page_config(page_title="Celestial Triage", layout="wide")
 st.title("Celestial Triage Dashboard")
 
 if not DB_PATH.exists():
-    st.warning("Database not found. Run CLI seed + pipeline first.")
+    st.warning("Database not found. Run: init-db → seed-mock → run-pipeline")
     st.stop()
 
 conn = sqlite3.connect(DB_PATH)
 conn.row_factory = sqlite3.Row
 
+score_count = conn.execute("SELECT COUNT(*) FROM detector_scores").fetchone()[0]
+if score_count == 0:
+    st.info("No detector scores found yet. Run `python -m celestial_triage.cli run-pipeline`.")
+    conn.close()
+    st.stop()
+
 with st.sidebar:
     st.header("Filters")
     detector = st.selectbox(
         "Detector",
-        ["all", "satellite_detector", "neo_detector", "unknown_mover_detector", "kbo_detector", "iso_detector", "deep_anomaly_detector"],
+        [
+            "all",
+            "satellite_detector",
+            "neo_detector",
+            "unknown_mover_detector",
+            "kbo_detector",
+            "iso_detector",
+            "deep_anomaly_detector",
+        ],
     )
     band = st.selectbox("Score band", ["all", "high", "medium", "low"])
     limit = st.slider("Top N", 10, 200, 50)
@@ -48,37 +63,63 @@ rows = conn.execute(q, vals).fetchall()
 st.subheader("Top-ranked candidates")
 st.dataframe(rows, use_container_width=True)
 
-candidate_id = st.selectbox("Select candidate", [r["candidate_id"] for r in rows] if rows else [])
+if not rows:
+    st.info("No candidates match current filters.")
+    conn.close()
+    st.stop()
+
+candidate_id = st.selectbox("Select candidate", [r["candidate_id"] for r in rows])
 
 if candidate_id:
     c1, c2 = st.columns([2, 1])
-    with c1:
-        cand = conn.execute("SELECT * FROM candidates WHERE candidate_id=?", (candidate_id,)).fetchone()
-        feats = conn.execute("SELECT * FROM shared_features WHERE candidate_id=?", (candidate_id,)).fetchone()
-        scores = conn.execute(
-            "SELECT detector_name, score, score_band, reasons_json, created_at FROM detector_scores WHERE candidate_id=? ORDER BY score DESC",
-            (candidate_id,),
-        ).fetchall()
-        dets = conn.execute(
-            """
-            SELECT d.timestamp,d.ra,d.dec,d.magnitude,d.magnitude_change,d.moving_flag,d.catalog_match_status
-            FROM detections d JOIN candidate_detections cd ON d.detection_id=cd.detection_id
-            WHERE cd.candidate_id=? ORDER BY d.timestamp ASC
-            """,
-            (candidate_id,),
-        ).fetchall()
-        retention = conn.execute("SELECT * FROM archive_policies WHERE candidate_id=?", (candidate_id,)).fetchone()
 
+    cand = conn.execute("SELECT * FROM candidates WHERE candidate_id=?", (candidate_id,)).fetchone()
+    feats = conn.execute("SELECT * FROM shared_features WHERE candidate_id=?", (candidate_id,)).fetchone()
+    scores = conn.execute(
+        "SELECT detector_name, score, score_band, reasons_json, created_at FROM detector_scores WHERE candidate_id=? ORDER BY score DESC",
+        (candidate_id,),
+    ).fetchall()
+    dets = conn.execute(
+        """
+        SELECT d.timestamp,d.ra,d.dec,d.magnitude,d.magnitude_change,d.moving_flag,d.catalog_match_status
+        FROM detections d JOIN candidate_detections cd ON d.detection_id=cd.detection_id
+        WHERE cd.candidate_id=? ORDER BY d.timestamp ASC
+        """,
+        (candidate_id,),
+    ).fetchall()
+    retention = conn.execute("SELECT * FROM archive_policies WHERE candidate_id=?", (candidate_id,)).fetchone()
+
+    with c1:
         st.markdown("### Candidate")
         st.json(dict(cand) if cand else {})
+
+        st.markdown("### Retention tier")
+        if retention:
+            st.metric("Tier", retention["retention_tier"])
+            st.caption(retention["rationale"])
+        else:
+            st.info("No retention decision yet. Run `assign-retention`.")
+
         st.markdown("### Shared features")
         st.json(dict(feats) if feats else {})
-        st.markdown("### Detector scores")
-        st.dataframe(scores, use_container_width=True)
+
+        st.markdown("### Detector scores (side-by-side)")
+        pivot = {r["detector_name"]: float(r["score"]) for r in scores}
+        st.dataframe([pivot], use_container_width=True)
+
+        st.markdown("### Score reasons")
+        for r in scores:
+            with st.expander(f"{r['detector_name']} • {r['score']:.3f} ({r['score_band']})"):
+                try:
+                    reasons = json.loads(r["reasons_json"])
+                except json.JSONDecodeError:
+                    reasons = [r["reasons_json"]]
+                for reason in reasons:
+                    st.write(f"- {reason}")
+                st.caption(f"Scored at {r['created_at']}")
+
         st.markdown("### Detection history")
         st.dataframe(dets, use_container_width=True)
-        st.markdown("### Retention")
-        st.json(dict(retention) if retention else {})
 
     with c2:
         st.markdown("### Review actions")
