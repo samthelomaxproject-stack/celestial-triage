@@ -153,6 +153,19 @@ python3 -m celestial_triage.cli ingest-lasair \
   --limit 10
 ```
 
+Optional automatic object-detail/cutout retrieval after ingest:
+
+```bash
+python3 -m celestial_triage.cli ingest-lasair \
+  --lasair-mode lsst \
+  --base-url https://lasair.lsst.ac.uk/api \
+  --selected "diaObjectId, ra, decl" \
+  --tables objects \
+  --conditions "1=1" \
+  --limit 25 \
+  --fetch-cutouts
+```
+
 ### Token requirements
 
 Tokens are broker/domain scoped. A token from one broker UI may fail against the other domain.
@@ -240,9 +253,12 @@ Image references discovered in broker payloads are stored in `image_assets` and 
 
 When payloads contain cutout/image links, the Mac UI image panel shows them and can open source URLs.
 
-Current limitation:
-- minimal LSST query fields (for example `diaObjectId, ra, decl`) may not include cutout URLs.
-- in that case, candidate image panel may be empty until query payload/fields provide image references.
+`ingest-lasair --fetch-cutouts` adds a follow-on detail lookup pass for ingested objects, attempts to discover image references from object-detail responses, and stores them in `image_assets`.
+
+Current limitations:
+- minimal LSST query fields (for example `diaObjectId, ra, decl`) may not include cutout URLs directly.
+- object-detail endpoint/shape differs by broker/domain; some objects will return no image/cutout references.
+- cutout lookup failures do not fail primary ingest; they are logged and skipped.
 
 ---
 

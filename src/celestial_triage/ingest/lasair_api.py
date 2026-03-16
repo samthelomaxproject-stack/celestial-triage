@@ -1,6 +1,7 @@
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import quote
 
 import requests
 
@@ -114,6 +115,63 @@ class LasairApiAdapter(BrokerAdapter):
             "since": since,
         }
         return url, headers, body
+
+    def _auth_headers(self) -> dict[str, str]:
+        return {"Authorization": f"Token {self.token}", "Content-Type": "application/json"}
+
+    def fetch_object_detail(self, source_id: str) -> dict[str, Any] | None:
+        if not self.token:
+            return None
+
+        headers = self._auth_headers()
+        sid = quote(str(source_id), safe="")
+        candidates = [
+            f"{self.base_url}/object/{sid}/",
+            f"{self.base_url}/objects/{sid}/",
+            f"{self.base_url}/object/{sid}",
+            f"{self.base_url}/objects/{sid}",
+        ]
+
+        for url in candidates:
+            try:
+                resp = requests.get(url, headers=headers, timeout=20)
+            except requests.RequestException:
+                continue
+            if resp.status_code in (401, 403):
+                LOGGER.warning("Lasair detail auth/permission error for %s", source_id)
+                return None
+            if resp.status_code == 429:
+                LOGGER.warning("Lasair detail rate limited for %s", source_id)
+                return None
+            if resp.status_code >= 400:
+                continue
+            try:
+                payload = resp.json()
+            except ValueError:
+                continue
+            if isinstance(payload, dict):
+                return payload
+
+        # LSST fallback: query endpoint for per-object detail row.
+        if self.lasair_mode == "lsst":
+            try:
+                qurl = f"{self.base_url}/query/"
+                body = {
+                    "selected": "*",
+                    "tables": "objects",
+                    "conditions": f"diaObjectId='{source_id}'",
+                }
+                resp = requests.post(qurl, json=body, headers=headers, timeout=20)
+                if resp.status_code < 400:
+                    payload = resp.json()
+                    if isinstance(payload, list) and payload:
+                        return payload[0] if isinstance(payload[0], dict) else {"detail": payload[0]}
+                    if isinstance(payload, dict):
+                        return payload
+            except Exception:
+                return None
+
+        return None
 
     def fetch_events(self) -> list[RawEvent]:
         if not self.token:

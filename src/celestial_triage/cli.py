@@ -50,10 +50,11 @@ def cmd_init_db(args: argparse.Namespace) -> None:
     LOGGER.info("Initialized DB at %s", DB_PATH)
 
 
-def _ingest_raw_events(db: Database, events: list, label: str) -> tuple[int, int, int]:
+def _ingest_raw_events(db: Database, events: list, label: str) -> tuple[int, int, int, list[str]]:
     accepted = 0
     skipped = 0
     linked_images = 0
+    accepted_source_ids: list[str] = []
     for raw in events:
         db.insert_raw_event(raw)
         det, warnings = normalize_event_safe(raw)
@@ -65,6 +66,7 @@ def _ingest_raw_events(db: Database, events: list, label: str) -> tuple[int, int
             LOGGER.info("%s record %s normalized with warnings: %s", label, raw.raw_event_id, ",".join(warnings))
         db.insert_detection(det)
         accepted += 1
+        accepted_source_ids.append(det.source_id)
 
         image_refs = extract_image_assets_from_payload(raw.payload)
         for item in image_refs:
@@ -83,7 +85,7 @@ def _ingest_raw_events(db: Database, events: list, label: str) -> tuple[int, int
     db.relink_image_assets_to_candidates()
     if linked_images:
         LOGGER.info("Linked %d image assets during %s ingest", linked_images, label)
-    return accepted, skipped, n_candidates
+    return accepted, skipped, n_candidates, sorted(set(accepted_source_ids))
 
 
 def cmd_seed_mock(args: argparse.Namespace) -> None:
@@ -92,7 +94,7 @@ def cmd_seed_mock(args: argparse.Namespace) -> None:
     feed = MockFeedAdapter(count=args.count)
     events = feed.fetch_events()
 
-    accepted, skipped, n_candidates = _ingest_raw_events(db, events, "mock")
+    accepted, skipped, n_candidates, _ = _ingest_raw_events(db, events, "mock")
 
     LOGGER.info(
         "Seeded %d raw events (%d accepted, %d skipped), %d candidate groups",
@@ -113,7 +115,7 @@ def cmd_ingest_jsonl(args: argparse.Namespace) -> None:
         LOGGER.warning("No ingestible events found in %s", args.input)
         return
 
-    accepted, skipped, n_candidates = _ingest_raw_events(db, events, "external")
+    accepted, skipped, n_candidates, _ = _ingest_raw_events(db, events, "external")
     LOGGER.info(
         "Ingested JSONL %s (%d raw, %d accepted, %d skipped), %d candidates total",
         args.input,
@@ -122,6 +124,55 @@ def cmd_ingest_jsonl(args: argparse.Namespace) -> None:
         skipped,
         n_candidates,
     )
+
+
+def _fetch_and_link_lasair_cutouts(db: Database, adapter: LasairApiAdapter, source_ids: list[str]) -> dict[str, int]:
+    checked = 0
+    detail_ok = 0
+    detail_fail = 0
+    image_assets = 0
+    linked_candidates: set[str] = set()
+
+    for source_id in sorted(set(source_ids)):
+        checked += 1
+        detail = adapter.fetch_object_detail(source_id)
+        if not detail:
+            detail_fail += 1
+            continue
+        detail_ok += 1
+
+        image_refs = extract_image_assets_from_payload(detail)
+        if not image_refs:
+            continue
+
+        det = db.get_latest_detection_for_source(source_id)
+        if not det:
+            continue
+
+        for item in image_refs:
+            db.upsert_image_asset(
+                detection_id=det["detection_id"],
+                source_id=source_id,
+                broker_name=str(det.get("broker_name") or "lasair_api"),
+                kind=item["kind"],
+                remote_url=item["url"],
+                source_field=item.get("source_field", ""),
+                metadata={"detail_fetch": True, **item.get("metadata", {})},
+            )
+            image_assets += 1
+
+        candidate_id = db.get_candidate_id_for_source(source_id)
+        if candidate_id:
+            linked_candidates.add(candidate_id)
+
+    db.relink_image_assets_to_candidates()
+    return {
+        "objects_checked": checked,
+        "detail_success": detail_ok,
+        "detail_failure": detail_fail,
+        "image_assets_discovered": image_assets,
+        "linked_candidate_count": len(linked_candidates),
+    }
 
 
 def cmd_ingest_lasair(args: argparse.Namespace) -> None:
@@ -182,12 +233,16 @@ def cmd_ingest_lasair(args: argparse.Namespace) -> None:
         LOGGER.warning("No ingestible Lasair events returned")
         return
 
-    accepted, skipped, n_candidates = _ingest_raw_events(db, events, "lasair")
+    accepted, skipped, n_candidates, accepted_source_ids = _ingest_raw_events(db, events, "lasair")
 
     # Run triage pipeline so summary reflects detector/follow-up state.
     cmd_extract_features(args)
     cmd_run_detectors(args)
     cmd_assign_retention(args)
+
+    cutout_summary: dict[str, int] | None = None
+    if args.fetch_cutouts:
+        cutout_summary = _fetch_and_link_lasair_cutouts(db, adapter, accepted_source_ids)
 
     top_scores = db.top_candidates(limit=20)
     detector_hits: dict[str, int] = {}
@@ -215,6 +270,8 @@ def cmd_ingest_lasair(args: argparse.Namespace) -> None:
     )
     LOGGER.info("Top detector categories (sampled): %s", detector_hits)
     LOGGER.info("Top follow-up priorities (sampled): %s", priority_hits)
+    if cutout_summary is not None:
+        LOGGER.info("Cutout retrieval summary: %s", cutout_summary)
 
 def cmd_extract_features(args: argparse.Namespace) -> None:
     db = Database(DB_PATH)
@@ -626,6 +683,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--selected", type=str, default="", help="LSST mode SELECT list")
     p.add_argument("--tables", type=str, default="", help="LSST mode FROM tables")
     p.add_argument("--conditions", type=str, default="", help="LSST mode WHERE conditions")
+    p.add_argument("--fetch-cutouts", action="store_true", help="Fetch object detail/cutout references after ingest")
     p.add_argument("--token", type=str, default=None, help="Optional Lasair token (or use LASAIR_API_TOKEN env)")
     p.set_defaults(func=cmd_ingest_lasair)
 

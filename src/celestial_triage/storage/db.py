@@ -439,6 +439,11 @@ class Database:
             rows = c.execute("SELECT candidate_id FROM candidates").fetchall()
         return [r[0] for r in rows]
 
+    def get_candidate_id_for_source(self, source_id: str) -> str | None:
+        with self.conn() as c:
+            row = c.execute("SELECT candidate_id FROM candidates WHERE source_id=?", (source_id,)).fetchone()
+        return str(row[0]) if row else None
+
     def get_candidate_with_features(self, candidate_id: str) -> dict[str, Any]:
         with self.conn() as c:
             cand = c.execute("SELECT * FROM candidates WHERE candidate_id=?", (candidate_id,)).fetchone()
@@ -460,6 +465,14 @@ class Database:
                 (candidate_id,),
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def get_latest_detection_for_source(self, source_id: str) -> dict[str, Any] | None:
+        with self.conn() as c:
+            row = c.execute(
+                "SELECT * FROM detections WHERE source_id=? ORDER BY timestamp DESC LIMIT 1",
+                (source_id,),
+            ).fetchone()
+        return dict(row) if row else None
 
     def get_latest_scores(self, candidate_id: str) -> list[dict[str, Any]]:
         with self.conn() as c:

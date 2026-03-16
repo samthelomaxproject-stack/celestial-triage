@@ -31,6 +31,7 @@ def test_cli_lasair_mode_and_base_url_arguments():
             "objects",
             "--conditions",
             "1=1",
+            "--fetch-cutouts",
         ]
     )
     assert args.lasair_mode == "lsst"
@@ -38,6 +39,7 @@ def test_cli_lasair_mode_and_base_url_arguments():
     assert args.selected == "diaObjectId, ra, decl"
     assert args.tables == "objects"
     assert args.conditions == "1=1"
+    assert args.fetch_cutouts is True
 
 
 def test_presets_exist_for_required_categories():

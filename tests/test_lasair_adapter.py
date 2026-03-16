@@ -116,3 +116,40 @@ def test_lasair_adapter_builds_lsst_payload(monkeypatch):
     }
     assert len(events) == 1
     assert events[0].source_id == "170032882292621441"
+
+
+def test_lasair_object_detail_get_path(monkeypatch):
+    calls = {"n": 0}
+
+    def fake_get(url, **kwargs):
+        calls["n"] += 1
+        if url.endswith("/object/1700/"):
+            return _FakeResp(200, {"cutouts": {"science": {"url": "https://img/science.png"}}})
+        return _FakeResp(404, {"detail": "not found"})
+
+    monkeypatch.setattr("celestial_triage.ingest.lasair_api.requests.get", fake_get)
+    adapter = LasairApiAdapter(token="tok", base_url="https://lasair.lsst.ac.uk/api", lasair_mode="lsst")
+    detail = adapter.fetch_object_detail("1700")
+    assert detail is not None
+    assert "cutouts" in detail
+    assert calls["n"] >= 1
+
+
+def test_lasair_object_detail_lsst_query_fallback(monkeypatch):
+    def fake_get(*args, **kwargs):
+        return _FakeResp(404, {"detail": "not found"})
+
+    observed = {"body": None}
+
+    def fake_post(url, **kwargs):
+        observed["body"] = kwargs.get("json")
+        return _FakeResp(200, [{"diaObjectId": "1700", "cutouts": {"difference": {"url": "https://img/diff.png"}}}])
+
+    monkeypatch.setattr("celestial_triage.ingest.lasair_api.requests.get", fake_get)
+    monkeypatch.setattr("celestial_triage.ingest.lasair_api.requests.post", fake_post)
+
+    adapter = LasairApiAdapter(token="tok", base_url="https://lasair.lsst.ac.uk/api", lasair_mode="lsst")
+    detail = adapter.fetch_object_detail("1700")
+    assert detail is not None
+    assert detail.get("diaObjectId") == "1700"
+    assert observed["body"]["conditions"] == "diaObjectId='1700'"

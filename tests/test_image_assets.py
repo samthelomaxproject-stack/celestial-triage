@@ -49,6 +49,14 @@ def test_image_asset_persistence_and_candidate_link(tmp_path):
         kind="science",
         remote_url="https://example.org/science.png",
     )
+    # Duplicate insert should update/replace same logical asset, not multiply rows.
+    db.upsert_image_asset(
+        detection_id="d1",
+        source_id="S1",
+        broker_name="lasair_api",
+        kind="science",
+        remote_url="https://example.org/science.png",
+    )
     db.relink_image_assets_to_candidates()
 
     cid = db.list_candidate_ids()[0]
