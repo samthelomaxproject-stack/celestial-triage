@@ -498,13 +498,15 @@ class AnalystConsoleApp(tk.Tk):
             outline = "#ffffff" if p.get("candidate_id") == self.selected_candidate_id else ""
             c.create_oval(x - r, y - r, x + r, y + r, fill=color, outline=outline)
 
+        legend_font_size = max(8, min(11, int(width / 90)))
         c.create_text(
             side_pad,
             6,
             anchor="nw",
             fill="#bbb",
             width=max(120, width - (2 * side_pad)),
-            text="Follow-up priority colors: red=urgent, orange=high, blue=medium, gray=low",
+            font=("SF Pro Text", legend_font_size),
+            text="red=urgent, orange=high, blue=medium, gray=low",
         )
 
     def on_sky_map_click(self, event) -> None:
