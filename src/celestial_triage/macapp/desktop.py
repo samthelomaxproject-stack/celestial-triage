@@ -651,15 +651,10 @@ class AnalystConsoleApp(tk.Tk):
         radius = 6
         line_width = 2
 
-        # Draw circle outline at center
+        # Draw circle outline at center (hollow so object is visible)
         canvas.create_oval(
             cx - radius, cy - radius, cx + radius, cy + radius,
             outline=marker_color, width=line_width, fill=""
-        )
-        # Small center dot for precision
-        canvas.create_oval(
-            cx - 2, cy - 2, cx + 2, cy + 2,
-            fill=marker_color, outline=""
         )
 
 
