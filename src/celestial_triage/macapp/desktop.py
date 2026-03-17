@@ -177,9 +177,10 @@ class AnalystConsoleApp(tk.Tk):
 
         self.sky_map_frame = ttk.LabelFrame(parent, text="Sky Map (RA/DEC)")
         self.sky_map_frame.grid(row=3, column=0, sticky="nsew", pady=6)
-        self.sky_map_canvas = tk.Canvas(self.sky_map_frame, height=220, background="#0f1115", highlightthickness=0)
+        self.sky_map_canvas = tk.Canvas(self.sky_map_frame, background="#0f1115", highlightthickness=0)
         self.sky_map_canvas.pack(fill="both", expand=True)
         self.sky_map_canvas.bind("<Button-1>", self.on_sky_map_click)
+        self.sky_map_canvas.bind("<Configure>", self.on_sky_map_resize)
 
     def _build_right(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
@@ -438,6 +439,9 @@ class AnalystConsoleApp(tk.Tk):
         self.selected_candidate_id = row["candidate_id"]
         self.review_candidate.set(self.selected_candidate_id)
         self.refresh_detail()
+        self.render_sky_map()
+
+    def on_sky_map_resize(self, event) -> None:
         self.render_sky_map()
 
     def _priority_color(self, p: str) -> str:
