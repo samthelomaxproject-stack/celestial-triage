@@ -191,12 +191,22 @@ python3 -m celestial_triage.cli ingest-lasair \
 
 ### Token requirements
 
-Tokens are broker/domain scoped. A token from one broker UI may fail against the other domain.
+**LSST and ZTF use separate API tokens.** They are not interchangeable.
 
-If you get `401 Invalid token`, verify:
-- token source (ZTF UI vs LSST UI)
-- `--lasair-mode`
-- `--base-url`
+Environment variables:
+- `LASAIR_LSST_API_TOKEN` — for LSST mode (`--lasair-mode lsst`)
+- `LASAIR_ZTF_API_TOKEN` — for ZTF mode (`--lasair-mode ztf`)
+- `LASAIR_API_TOKEN` — legacy fallback (checked if mode-specific token not set)
+
+Broker-specific endpoints:
+- LSST: `https://lasair.lsst.ac.uk/api`
+- ZTF: `https://lasair-ztf.lsst.ac.uk/api`
+
+If you get `401 Invalid token`:
+- Verify you are using the correct token for the selected mode
+- Check that `LASAIR_LSST_API_TOKEN` is set for LSST, or `LASAIR_ZTF_API_TOKEN` for ZTF
+- Confirm `--lasair-mode` matches your token type
+- Verify `--base-url` matches the token's broker domain
 
 ---
 

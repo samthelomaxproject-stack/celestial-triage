@@ -40,16 +40,28 @@ class LasairApiAdapter(BrokerAdapter):
         request_delay: float = 2.0,
         max_retries: int = 3,
     ) -> None:
-        self.token = token or os.getenv("LASAIR_API_TOKEN", "")
+        self.lasair_mode = (lasair_mode or "ztf").strip().lower()
+        if self.lasair_mode not in {"ztf", "lsst"}:
+            raise ValueError("lasair_mode must be one of: ztf, lsst")
+
+        # Separate token handling for LSST and ZTF
+        if self.lasair_mode == "lsst":
+            self.token = token or os.getenv("LASAIR_LSST_API_TOKEN", "")
+            default_base = "https://lasair.lsst.ac.uk/api"
+        else:
+            self.token = token or os.getenv("LASAIR_ZTF_API_TOKEN", "")
+            default_base = "https://lasair-ztf.lsst.ac.uk/api"
+
+        # Backwards compatibility: also check legacy LASAIR_API_TOKEN if mode-specific not set
+        if not self.token:
+            self.token = os.getenv("LASAIR_API_TOKEN", "")
+
         self.query = query
         self.limit = max(1, min(1000, int(limit)))
         self.days_back = max(1, min(30, int(days_back)))
         env_base_url = os.getenv("LASAIR_API_BASE_URL", "").strip()
-        resolved_base = base_url or env_base_url or "https://lasair-ztf.lsst.ac.uk/api"
+        resolved_base = base_url or env_base_url or default_base
         self.base_url = resolved_base.rstrip("/")
-        self.lasair_mode = (lasair_mode or "ztf").strip().lower()
-        if self.lasair_mode not in {"ztf", "lsst"}:
-            raise ValueError("lasair_mode must be one of: ztf, lsst")
         self.selected = selected.strip()
         self.tables = tables.strip()
         self.conditions = conditions.strip()
@@ -205,7 +217,17 @@ class LasairApiAdapter(BrokerAdapter):
 
     def fetch_events(self) -> list[RawEvent]:
         if not self.token:
-            LOGGER.warning("LASAIR_API_TOKEN missing; skipping live Lasair ingestion")
+            # Clean failure with mode-specific helpful message
+            if self.lasair_mode == "lsst":
+                LOGGER.error(
+                    "Lasair LSST token missing. Set LASAIR_LSST_API_TOKEN environment variable. "
+                    "LSST and ZTF use separate tokens."
+                )
+            else:
+                LOGGER.error(
+                    "Lasair ZTF token missing. Set LASAIR_ZTF_API_TOKEN environment variable. "
+                    "ZTF and LSST use separate tokens."
+                )
             return []
 
         requested_total = self.limit

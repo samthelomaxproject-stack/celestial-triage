@@ -101,8 +101,8 @@ class AnalystConsoleApp(tk.Tk):
 
     def _save_settings(self) -> None:
         payload = {
-            "lasair_api_token": self.lasair_token_var.get().strip(),
-            "lasair_api_base_url": self.lasair_base_url_var.get().strip(),
+            "lasair_lsst_api_token": self.lasair_lsst_token_var.get().strip(),
+            "lasair_ztf_api_token": self.lasair_ztf_token_var.get().strip(),
         }
         self.settings_file.parent.mkdir(parents=True, exist_ok=True)
         self.settings_file.write_text(json.dumps(payload, indent=2))
@@ -253,6 +253,9 @@ class AnalystConsoleApp(tk.Tk):
         self.ingest_tables = tk.StringVar(value="objects")
         self.ingest_conditions = tk.StringVar(value="1=1")
 
+        # Token status tracking
+        self.ingest_token_status = tk.StringVar(value="")
+
         rows = [
             ("Mode", self.ingest_mode),
             ("Base URL", self.ingest_base_url),
@@ -267,12 +270,48 @@ class AnalystConsoleApp(tk.Tk):
         for i, (label, var) in enumerate(rows):
             ttk.Label(f, text=label).grid(row=i, column=0, sticky="w")
             if label == "Mode":
-                ttk.Combobox(f, textvariable=var, values=["ztf", "lsst"], state="readonly", width=32).grid(
-                    row=i, column=1, sticky="ew"
-                )
+                combo = ttk.Combobox(f, textvariable=var, values=["ztf", "lsst"], state="readonly", width=32)
+                combo.grid(row=i, column=1, sticky="ew")
+                combo.bind("<<ComboboxSelected>>", self._update_ingest_token_warning)
             else:
                 ttk.Entry(f, textvariable=var, width=40).grid(row=i, column=1, sticky="ew")
+        
+        # Token warning label
+        self.ingest_token_warning = ttk.Label(f, textvariable=self.ingest_token_status, foreground="#ff6b6b", wraplength=400)
+        self.ingest_token_warning.grid(row=9, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        
         ttk.Button(f, text="Run ingest-lasair", command=self.run_ingest_lasair).grid(row=10, column=0, columnspan=2, sticky="ew", pady=4)
+        
+        # Initial token check
+        self._update_ingest_token_warning()
+
+    def _update_ingest_token_warning(self, _event=None) -> None:
+        """Update token warning based on selected mode."""
+        mode = self.ingest_mode.get()
+        if mode == "lsst":
+            lsst_token = os.getenv("LASAIR_LSST_API_TOKEN", "")
+            legacy_token = os.getenv("LASAIR_API_TOKEN", "")
+            if lsst_token:
+                self.ingest_token_status.set(f"✓ LSST token ready (LASAIR_LSST_API_TOKEN)")
+                self.ingest_token_warning.configure(foreground="#69c0ff")
+            elif legacy_token:
+                self.ingest_token_status.set(f"⚠ Using legacy token (consider migrating to LASAIR_LSST_API_TOKEN)")
+                self.ingest_token_warning.configure(foreground="#ffa940")
+            else:
+                self.ingest_token_status.set(f"⚠ Missing: Set LASAIR_LSST_API_TOKEN for LSST ingest")
+                self.ingest_token_warning.configure(foreground="#ff6b6b")
+        else:
+            ztf_token = os.getenv("LASAIR_ZTF_API_TOKEN", "")
+            legacy_token = os.getenv("LASAIR_API_TOKEN", "")
+            if ztf_token:
+                self.ingest_token_status.set(f"✓ ZTF token ready (LASAIR_ZTF_API_TOKEN)")
+                self.ingest_token_warning.configure(foreground="#69c0ff")
+            elif legacy_token:
+                self.ingest_token_status.set(f"⚠ Using legacy token (consider migrating to LASAIR_ZTF_API_TOKEN)")
+                self.ingest_token_warning.configure(foreground="#ffa940")
+            else:
+                self.ingest_token_status.set(f"⚠ Missing: Set LASAIR_ZTF_API_TOKEN for ZTF ingest")
+                self.ingest_token_warning.configure(foreground="#ff6b6b")
 
     def _build_review_tab(self) -> None:
         f = self.tab_review
@@ -320,28 +359,32 @@ class AnalystConsoleApp(tk.Tk):
 
     def _build_settings_tab(self) -> None:
         f = self.tab_settings
-        self.lasair_token_var = tk.StringVar(value=self.settings.get("lasair_api_token", ""))
-        self.lasair_base_url_var = tk.StringVar(
-            value=self.settings.get("lasair_api_base_url", "https://lasair.lsst.ac.uk/api")
-        )
+        self.lasair_lsst_token_var = tk.StringVar(value=self.settings.get("lasair_lsst_api_token", ""))
+        self.lasair_ztf_token_var = tk.StringVar(value=self.settings.get("lasair_ztf_api_token", ""))
+        # Legacy fallback
+        legacy_token = self.settings.get("lasair_api_token", "")
+        if legacy_token and not self.lasair_lsst_token_var.get():
+            self.lasair_lsst_token_var.set(legacy_token)
 
-        ttk.Label(f, text="Lasair API token").grid(row=0, column=0, sticky="w")
-        ttk.Entry(f, textvariable=self.lasair_token_var, show="*", width=42).grid(row=0, column=1, sticky="ew")
+        ttk.Label(f, text="Lasair LSST API token").grid(row=0, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.lasair_lsst_token_var, show="*", width=42).grid(row=0, column=1, sticky="ew")
 
-        ttk.Label(f, text="Lasair API base URL").grid(row=1, column=0, sticky="w")
-        ttk.Entry(f, textvariable=self.lasair_base_url_var, width=42).grid(row=1, column=1, sticky="ew")
+        ttk.Label(f, text="Lasair ZTF API token").grid(row=1, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.lasair_ztf_token_var, show="*", width=42).grid(row=1, column=1, sticky="ew")
 
-        ttk.Button(f, text="Save Settings", command=self._save_settings).grid(row=2, column=0, columnspan=2, sticky="ew", pady=4)
+        ttk.Label(f, text="(LSST and ZTF use separate tokens)").grid(row=2, column=0, columnspan=2, sticky="w")
+
+        ttk.Button(f, text="Save Settings", command=self._save_settings).grid(row=3, column=0, columnspan=2, sticky="ew", pady=4)
         ttk.Label(
             f,
             text=f"Stored at: {self.settings_file}",
             foreground="#666",
-        ).grid(row=3, column=0, columnspan=2, sticky="w")
+        ).grid(row=4, column=0, columnspan=2, sticky="w")
 
     def run_ingest_lasair(self) -> None:
         params = {
             "lasair_mode": self.ingest_mode.get(),
-            "base_url": self.ingest_base_url.get() or self.lasair_base_url_var.get(),
+            "base_url": self.ingest_base_url.get(),
             "preset": self.ingest_preset.get() or None,
             "limit": self.ingest_limit.get(),
             "days_back": self.ingest_days_back.get(),
@@ -389,12 +432,20 @@ class AnalystConsoleApp(tk.Tk):
         preview = self.runner.preview(name, params)
         self.log(f"\n[{name}] preview: {preview}")
         extra_env: dict[str, str] = {}
-        token = (self.lasair_token_var.get() if hasattr(self, "lasair_token_var") else "").strip()
-        base_url = (self.lasair_base_url_var.get() if hasattr(self, "lasair_base_url_var") else "").strip()
-        if token:
-            extra_env["LASAIR_API_TOKEN"] = token
-        if base_url:
-            extra_env["LASAIR_API_BASE_URL"] = base_url
+        
+        # Support both new separate tokens and legacy single token
+        lsst_token = (self.lasair_lsst_token_var.get() if hasattr(self, "lasair_lsst_token_var") else "").strip()
+        ztf_token = (self.lasair_ztf_token_var.get() if hasattr(self, "lasair_ztf_token_var") else "").strip()
+        
+        if lsst_token:
+            extra_env["LASAIR_LSST_API_TOKEN"] = lsst_token
+        if ztf_token:
+            extra_env["LASAIR_ZTF_API_TOKEN"] = ztf_token
+        # Also set legacy token for backwards compatibility with older code paths
+        if lsst_token:
+            extra_env["LASAIR_API_TOKEN"] = lsst_token
+        elif ztf_token:
+            extra_env["LASAIR_API_TOKEN"] = ztf_token
 
         result = self.runner.run(name, params, cwd=self.repo_root, extra_env=extra_env)
         self.command_history.append({"name": name, "success": result.success, "at": result.ran_at})

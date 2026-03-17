@@ -261,7 +261,26 @@ def _link_layered_survey_context_images(db: Database) -> dict[str, int]:
     }
 
 
+def _resolve_lasair_token(lasair_mode: str, cli_token: str | None) -> str | None:
+    """Resolve Lasair token based on mode and environment."""
+    if cli_token:
+        return cli_token
+    if lasair_mode == "lsst":
+        token = os.getenv("LASAIR_LSST_API_TOKEN", "")
+        if token:
+            return token
+        # Fallback to legacy token
+        return os.getenv("LASAIR_API_TOKEN", "")
+    else:
+        token = os.getenv("LASAIR_ZTF_API_TOKEN", "")
+        if token:
+            return token
+        # Fallback to legacy token
+        return os.getenv("LASAIR_API_TOKEN", "")
+
+
 def cmd_ingest_lasair(args: argparse.Namespace) -> None:
+    import os
     db = Database(DB_PATH)
     db.init()
 
@@ -272,6 +291,21 @@ def cmd_ingest_lasair(args: argparse.Namespace) -> None:
     selected = (args.selected or "").strip()
     tables = (args.tables or "").strip()
     conditions = (args.conditions or "").strip()
+
+    # Check for appropriate token before proceeding
+    token = _resolve_lasair_token(lasair_mode, args.token)
+    if not token:
+        if lasair_mode == "lsst":
+            LOGGER.error(
+                "LASAIR_LSST_API_TOKEN not set. LSST and ZTF use separate tokens. "
+                "Set LASAIR_LSST_API_TOKEN for LSST mode or provide --token."
+            )
+        else:
+            LOGGER.error(
+                "LASAIR_ZTF_API_TOKEN not set. ZTF and LSST use separate tokens. "
+                "Set LASAIR_ZTF_API_TOKEN for ZTF mode or provide --token."
+            )
+        sys.exit(1)
 
     preset_name = args.preset
     preset = resolve_preset(preset_name)
@@ -304,7 +338,7 @@ def cmd_ingest_lasair(args: argparse.Namespace) -> None:
         )
 
     adapter = LasairApiAdapter(
-        token=args.token,
+        token=token,
         query=query,
         limit=limit,
         days_back=days_back,
