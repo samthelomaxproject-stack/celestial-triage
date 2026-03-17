@@ -646,22 +646,17 @@ class AnalystConsoleApp(tk.Tk):
         Future: extend with RA/DEC -> pixel mapping for precise positioning.
         """
         cx, cy = width // 2, height // 2
-        # Crosshair marker (small, visible but not obstructive)
+        # Circle marker (small, visible but not obstructive)
         marker_color = "#ff4d4f"  # Red for visibility
-        marker_size = 8
+        radius = 6
         line_width = 2
 
-        # Horizontal line
-        canvas.create_line(
-            cx - marker_size, cy, cx + marker_size, cy,
-            fill=marker_color, width=line_width
+        # Draw circle outline at center
+        canvas.create_oval(
+            cx - radius, cy - radius, cx + radius, cy + radius,
+            outline=marker_color, width=line_width, fill=""
         )
-        # Vertical line
-        canvas.create_line(
-            cx, cy - marker_size, cx, cy + marker_size,
-            fill=marker_color, width=line_width
-        )
-        # Small center dot
+        # Small center dot for precision
         canvas.create_oval(
             cx - 2, cy - 2, cx + 2, cy + 2,
             fill=marker_color, outline=""
