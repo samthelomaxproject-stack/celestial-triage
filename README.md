@@ -296,6 +296,17 @@ Typical files:
 - `image_previews/<candidate_id>/survey_context_panstarrs.png`
 - `image_previews/<candidate_id>/survey_context_skyview.png`
 
+### Candidate context panel (Mac app)
+
+The selected candidate now includes a compact **Context Panel** that summarizes position-neighborhood heuristics using existing stored data:
+- nearest tracked object summary + angular distance
+- host/no-host style hint from catalog match status
+- crowded vs isolated field indication
+- provenance summary
+- concise context interpretation text
+
+This is heuristic context, not definitive catalog classification.
+
 ### Mac app image panel behavior
 
 The Mac app image panel:

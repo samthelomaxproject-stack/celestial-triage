@@ -23,6 +23,7 @@ except Exception as exc:  # pragma: no cover
     sys.exit(1)
 
 from celestial_triage.config import DB_PATH
+from celestial_triage.context import build_candidate_context
 from celestial_triage.macapp.runner import SafeCliRunner
 from celestial_triage.scoring.followup import build_followup_priority
 from celestial_triage.scoring.interpretation import build_interpretation_summary
@@ -156,7 +157,8 @@ class AnalystConsoleApp(tk.Tk):
 
     def _build_center(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
-        parent.rowconfigure(1, weight=1)
+        parent.rowconfigure(1, weight=3)
+        parent.rowconfigure(2, weight=1)
 
         ttk.Label(parent, text="Candidate Detail", font=("SF Pro Text", 14, "bold")).grid(
             row=0, column=0, sticky="w"
@@ -164,6 +166,11 @@ class AnalystConsoleApp(tk.Tk):
 
         self.detail_text = tk.Text(parent, wrap="word")
         self.detail_text.grid(row=1, column=0, sticky="nsew", pady=6)
+
+        self.context_frame = ttk.LabelFrame(parent, text="Context Panel")
+        self.context_frame.grid(row=2, column=0, sticky="nsew", pady=6)
+        self.context_text = tk.Text(self.context_frame, height=8, wrap="word")
+        self.context_text.pack(fill="both", expand=True)
 
     def _build_right(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
@@ -424,6 +431,7 @@ class AnalystConsoleApp(tk.Tk):
 
     def refresh_detail(self) -> None:
         self.detail_text.delete("1.0", tk.END)
+        self.context_text.delete("1.0", tk.END)
         for child in self.image_panel_container.winfo_children():
             child.destroy()
         self._image_photos = []
@@ -436,6 +444,7 @@ class AnalystConsoleApp(tk.Tk):
             scores = self.db.get_latest_scores(cid)
             dets = self.db.get_detections_for_candidate(cid)
             images = self.db.get_images_for_candidate(cid)
+            context = build_candidate_context(self.db, cid)
         except Exception as exc:
             self.detail_text.insert("end", f"Error loading candidate: {exc}\n")
             return
@@ -459,6 +468,7 @@ class AnalystConsoleApp(tk.Tk):
             "provenance_sources": sorted({d.get("broker_name", "unknown") for d in dets}),
         }
         self.detail_text.insert("end", json.dumps(payload, indent=2))
+        self.context_text.insert("end", json.dumps(context, indent=2))
 
         self._current_images = images
         self._image_photos = []
