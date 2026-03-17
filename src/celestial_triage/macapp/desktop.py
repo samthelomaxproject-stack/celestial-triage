@@ -460,7 +460,9 @@ class AnalystConsoleApp(tk.Tk):
 
         width = max(320, c.winfo_width() or 320)
         height = max(220, c.winfo_height() or 220)
-        pad = 22
+        side_pad = 22
+        top_band = 30
+        bottom_pad = 20
 
         ras = [p["ra"] for p in points]
         decs = [p["dec"] for p in points]
@@ -471,15 +473,20 @@ class AnalystConsoleApp(tk.Tk):
         if dmax == dmin:
             dmax += 1e-6
 
+        plot_left = side_pad
+        plot_right = width - side_pad
+        plot_top = top_band
+        plot_bottom = height - bottom_pad
+
         def x_of(ra: float) -> float:
-            return pad + (ra - rmin) / (rmax - rmin) * (width - 2 * pad)
+            return plot_left + (ra - rmin) / (rmax - rmin) * (plot_right - plot_left)
 
         def y_of(dec: float) -> float:
-            return height - pad - (dec - dmin) / (dmax - dmin) * (height - 2 * pad)
+            return plot_bottom - (dec - dmin) / (dmax - dmin) * (plot_bottom - plot_top)
 
-        c.create_rectangle(pad, pad, width - pad, height - pad, outline="#2b2f36")
-        c.create_text(pad, height - 6, anchor="sw", fill="#999", text=f"RA [{rmin:.2f}..{rmax:.2f}]")
-        c.create_text(width - pad, 6, anchor="ne", fill="#999", text=f"DEC [{dmin:.2f}..{dmax:.2f}]")
+        c.create_rectangle(plot_left, plot_top, plot_right, plot_bottom, outline="#2b2f36")
+        c.create_text(plot_left, height - 4, anchor="sw", fill="#999", text=f"RA [{rmin:.2f}..{rmax:.2f}]")
+        c.create_text(plot_right, plot_top - 4, anchor="se", fill="#999", text=f"DEC [{dmin:.2f}..{dmax:.2f}]")
 
         for p in points:
             x = x_of(float(p["ra"]))
@@ -492,11 +499,12 @@ class AnalystConsoleApp(tk.Tk):
             c.create_oval(x - r, y - r, x + r, y + r, fill=color, outline=outline)
 
         c.create_text(
-            pad,
+            side_pad,
             6,
             anchor="nw",
             fill="#bbb",
-            text="Color by follow-up priority (red=urgent, orange=high, blue=medium, gray=low)",
+            width=max(120, width - (2 * side_pad)),
+            text="Follow-up priority colors: red=urgent, orange=high, blue=medium, gray=low",
         )
 
     def on_sky_map_click(self, event) -> None:
