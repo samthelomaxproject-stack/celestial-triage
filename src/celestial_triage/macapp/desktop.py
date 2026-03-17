@@ -614,8 +614,12 @@ class AnalystConsoleApp(tk.Tk):
                 try:
                     photo = tk.PhotoImage(file=local_path)
                     self._image_photos.append(photo)
-                    lbl = ttk.Label(self.image_panel_container, image=photo)
-                    lbl.grid(row=row_idx, column=0, sticky="w", padx=8)
+                    # Use canvas for overlay marker support
+                    canvas = tk.Canvas(self.image_panel_container, highlightthickness=0)
+                    canvas.grid(row=row_idx, column=0, sticky="w", padx=8)
+                    canvas.create_image(0, 0, anchor="nw", image=photo)
+                    # Draw candidate marker at center (assumes image centered on candidate)
+                    self._draw_candidate_marker(canvas, photo.width(), photo.height())
                     rendered = True
                 except Exception:
                     rendered = False
@@ -634,6 +638,34 @@ class AnalystConsoleApp(tk.Tk):
                 ttk.Button(btns, text="Open Remote", command=lambda u=remote_url: webbrowser.open(str(u))).pack(side=tk.LEFT, padx=6)
 
             row_idx += 2
+
+    def _draw_candidate_marker(self, canvas: tk.Canvas, width: int, height: int) -> None:
+        """Draw a candidate location marker at image center.
+
+        Initial implementation assumes image is centered on candidate.
+        Future: extend with RA/DEC -> pixel mapping for precise positioning.
+        """
+        cx, cy = width // 2, height // 2
+        # Crosshair marker (small, visible but not obstructive)
+        marker_color = "#ff4d4f"  # Red for visibility
+        marker_size = 8
+        line_width = 2
+
+        # Horizontal line
+        canvas.create_line(
+            cx - marker_size, cy, cx + marker_size, cy,
+            fill=marker_color, width=line_width
+        )
+        # Vertical line
+        canvas.create_line(
+            cx, cy - marker_size, cx, cy + marker_size,
+            fill=marker_color, width=line_width
+        )
+        # Small center dot
+        canvas.create_oval(
+            cx - 2, cy - 2, cx + 2, cy + 2,
+            fill=marker_color, outline=""
+        )
 
 
 def main() -> None:
