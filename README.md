@@ -307,6 +307,20 @@ The selected candidate now includes a compact **Context Panel** that summarizes 
 
 This is heuristic context, not definitive catalog classification.
 
+### Sky map panel (Mac app)
+
+The Mac app now includes a **Sky Map (RA/DEC)** panel that:
+- plots all plottable candidates (RA on x-axis, DEC on y-axis)
+- colors points by follow-up priority (urgent/high/medium/low)
+- emphasizes selected candidate point
+- supports click-to-select via nearest-point selection
+- syncs map selection back into candidate detail/queue context
+
+Limitations (first pass):
+- simple 2D RA/DEC projection (no advanced sky projection/wrap handling)
+- no pan/zoom yet
+- candidates without usable coordinates are skipped
+
 ### Mac app image panel behavior
 
 The Mac app image panel:

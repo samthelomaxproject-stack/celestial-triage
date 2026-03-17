@@ -28,6 +28,7 @@ from celestial_triage.macapp.runner import SafeCliRunner
 from celestial_triage.scoring.followup import build_followup_priority
 from celestial_triage.scoring.interpretation import build_interpretation_summary
 from celestial_triage.storage.db import Database
+from celestial_triage.ui.sky_map import nearest_point, prepare_candidate_sky_points
 
 
 def _looks_like_repo_root(path: Path) -> bool:
@@ -85,6 +86,7 @@ class AnalystConsoleApp(tk.Tk):
         self.command_history: list[dict] = []
         self._current_images: list[dict] = []
         self._image_photos: list[tk.PhotoImage] = []
+        self._sky_points: list[dict] = []
 
         self._build_layout()
         self.refresh_all()
@@ -159,6 +161,7 @@ class AnalystConsoleApp(tk.Tk):
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(1, weight=3)
         parent.rowconfigure(2, weight=1)
+        parent.rowconfigure(3, weight=2)
 
         ttk.Label(parent, text="Candidate Detail", font=("SF Pro Text", 14, "bold")).grid(
             row=0, column=0, sticky="w"
@@ -171,6 +174,12 @@ class AnalystConsoleApp(tk.Tk):
         self.context_frame.grid(row=2, column=0, sticky="nsew", pady=6)
         self.context_text = tk.Text(self.context_frame, height=8, wrap="word")
         self.context_text.pack(fill="both", expand=True)
+
+        self.sky_map_frame = ttk.LabelFrame(parent, text="Sky Map (RA/DEC)")
+        self.sky_map_frame.grid(row=3, column=0, sticky="nsew", pady=6)
+        self.sky_map_canvas = tk.Canvas(self.sky_map_frame, height=220, background="#0f1115", highlightthickness=0)
+        self.sky_map_canvas.pack(fill="both", expand=True)
+        self.sky_map_canvas.bind("<Button-1>", self.on_sky_map_click)
 
     def _build_right(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
@@ -402,6 +411,7 @@ class AnalystConsoleApp(tk.Tk):
     def refresh_all(self) -> None:
         self.db.init()
         self.load_candidates()
+        self.render_sky_map()
         self.refresh_detail()
 
     def load_candidates(self) -> None:
@@ -428,6 +438,85 @@ class AnalystConsoleApp(tk.Tk):
         self.selected_candidate_id = row["candidate_id"]
         self.review_candidate.set(self.selected_candidate_id)
         self.refresh_detail()
+        self.render_sky_map()
+
+    def _priority_color(self, p: str) -> str:
+        return {
+            "urgent": "#ff4d4f",
+            "high": "#ffa940",
+            "medium": "#69c0ff",
+            "low": "#8c8c8c",
+        }.get(p, "#8c8c8c")
+
+    def render_sky_map(self) -> None:
+        c = self.sky_map_canvas
+        c.delete("all")
+
+        points = prepare_candidate_sky_points(self.db)
+        self._sky_points = points
+        if not points:
+            c.create_text(12, 12, anchor="nw", fill="#ddd", text="No plottable candidates with RA/DEC")
+            return
+
+        width = max(320, c.winfo_width() or 320)
+        height = max(220, c.winfo_height() or 220)
+        pad = 22
+
+        ras = [p["ra"] for p in points]
+        decs = [p["dec"] for p in points]
+        rmin, rmax = min(ras), max(ras)
+        dmin, dmax = min(decs), max(decs)
+        if rmax == rmin:
+            rmax += 1e-6
+        if dmax == dmin:
+            dmax += 1e-6
+
+        def x_of(ra: float) -> float:
+            return pad + (ra - rmin) / (rmax - rmin) * (width - 2 * pad)
+
+        def y_of(dec: float) -> float:
+            return height - pad - (dec - dmin) / (dmax - dmin) * (height - 2 * pad)
+
+        c.create_rectangle(pad, pad, width - pad, height - pad, outline="#2b2f36")
+        c.create_text(pad, height - 6, anchor="sw", fill="#999", text=f"RA [{rmin:.2f}..{rmax:.2f}]")
+        c.create_text(width - pad, 6, anchor="ne", fill="#999", text=f"DEC [{dmin:.2f}..{dmax:.2f}]")
+
+        for p in points:
+            x = x_of(float(p["ra"]))
+            y = y_of(float(p["dec"]))
+            p["_px"] = x
+            p["_py"] = y
+            color = self._priority_color(str(p.get("followup_priority", "low")))
+            r = 5 if str(p.get("followup_priority")) in ("urgent", "high") else 4
+            outline = "#ffffff" if p.get("candidate_id") == self.selected_candidate_id else ""
+            c.create_oval(x - r, y - r, x + r, y + r, fill=color, outline=outline)
+
+        c.create_text(
+            pad,
+            6,
+            anchor="nw",
+            fill="#bbb",
+            text="Color by follow-up priority (red=urgent, orange=high, blue=medium, gray=low)",
+        )
+
+    def on_sky_map_click(self, event) -> None:
+        pt = nearest_point(self._sky_points, float(event.x), float(event.y), max_px_dist=12.0)
+        if not pt:
+            return
+        cid = str(pt["candidate_id"])
+        self.selected_candidate_id = cid
+        self.review_candidate.set(cid)
+
+        # Sync queue selection if candidate is visible in current filter.
+        for i, row in enumerate(self.candidates):
+            if row.get("candidate_id") == cid:
+                self.candidate_list.selection_clear(0, tk.END)
+                self.candidate_list.selection_set(i)
+                self.candidate_list.see(i)
+                break
+
+        self.refresh_detail()
+        self.render_sky_map()
 
     def refresh_detail(self) -> None:
         self.detail_text.delete("1.0", tk.END)
@@ -435,6 +524,7 @@ class AnalystConsoleApp(tk.Tk):
         for child in self.image_panel_container.winfo_children():
             child.destroy()
         self._image_photos = []
+        self._sky_points = []
         cid = self.selected_candidate_id
         if not cid:
             return
