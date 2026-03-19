@@ -479,6 +479,7 @@ def _write_rows(rows: list[dict[str, Any]], fmt: str, output: Path, fieldnames: 
             lines.append(f"- Interpretation: {r.get('primary_interpretation','unknown')} ({r.get('interpretation_confidence','weak')})")
             lines.append(f"- Conflict: {r.get('conflict_severity','none')} | Competing: {r.get('competing_interpretations','')}")
             lines.append(f"- Context: {r.get('context_interpretation','')}")
+            lines.append(f"- Context quick: {r.get('context_concise_explanation','')}")
             lines.append(f"- Nearest: {r.get('context_nearest_object','')} | Host hint: {r.get('context_host_hint','')} | Field: {r.get('context_field_density','')}")
             lines.append(f"- Trajectory quality: {r.get('trajectory_quality',0)} (motion={r.get('motion_consistency',0)}, direction={r.get('direction_consistency',0)})")
             lines.append(f"- Retention: {r.get('retention_tier','')}")
@@ -632,6 +633,14 @@ def build_export_rows(
             "conflict_severity": interpretation["conflict_severity"],
             "competing_interpretations": ", ".join(interpretation["competing_interpretations"]),
             "interpretation_explanation": interpretation["explanation"],
+            "context_status": context.get("context_status", ""),
+            "context_ra": context.get("ra", ""),
+            "context_dec": context.get("dec", ""),
+            "context_host_context_note": context.get("host_context_note", ""),
+            "context_crowdedness_note": context.get("crowdedness_note", ""),
+            "context_catalog_context_note": context.get("catalog_context_note", ""),
+            "context_provenance_note": context.get("provenance_note", ""),
+            "context_concise_explanation": context.get("concise_explanation", ""),
             "context_nearest_object": context.get("nearest_object_summary", ""),
             "context_host_hint": context.get("host_hint", ""),
             "context_nearest_arcsec": context.get("nearest_object_arcsec", ""),
@@ -688,6 +697,14 @@ def cmd_export_candidates(args: argparse.Namespace) -> None:
                 "conflict_severity",
                 "competing_interpretations",
                 "interpretation_explanation",
+                "context_status",
+                "context_ra",
+                "context_dec",
+                "context_host_context_note",
+                "context_crowdedness_note",
+                "context_catalog_context_note",
+                "context_provenance_note",
+                "context_concise_explanation",
                 "context_nearest_object",
                 "context_host_hint",
                 "context_nearest_arcsec",

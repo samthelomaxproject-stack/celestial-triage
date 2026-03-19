@@ -630,7 +630,7 @@ class AnalystConsoleApp(tk.Tk):
             "provenance_sources": sorted({d.get("broker_name", "unknown") for d in dets}),
         }
         self.detail_text.insert("end", json.dumps(payload, indent=2))
-        self.context_text.insert("end", json.dumps(context, indent=2))
+        self.context_text.insert("end", self._format_context_panel(context))
 
         self._overlay_ra = cand.get("average_ra")
         self._overlay_dec = cand.get("average_dec")
@@ -639,6 +639,27 @@ class AnalystConsoleApp(tk.Tk):
         self._current_images = images
         self._image_photos = []
         self._render_images_panel(images)
+
+    def _format_context_panel(self, context: dict) -> str:
+        def g(k: str, d: str = "unknown"):
+            v = context.get(k)
+            return d if v is None or v == "" else str(v)
+
+        return (
+            f"RA: {g('ra')}\n"
+            f"DEC: {g('dec')}\n"
+            f"Status: {g('context_status')}\n\n"
+            f"Host context: {g('host_context_note')}\n"
+            f"Field density: {g('crowdedness_note')}\n"
+            f"Catalog context: {g('catalog_context_note')}\n"
+            f"Provenance: {g('provenance_note')}\n"
+            f"History points: {g('candidate_history_count', '0')}\n"
+            f"Follow-up: {g('followup_priority')}\n"
+            f"Interpretation: {g('interpretation_summary')}\n"
+            f"Images: {g('image_availability')}\n"
+            f"Nearest: {g('nearest_object_summary')}\n\n"
+            f"Quick context: {g('concise_explanation')}"
+        )
 
     def _image_kind_label(self, kind: str) -> str:
         mapping = {

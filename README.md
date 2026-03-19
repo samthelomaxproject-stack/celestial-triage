@@ -307,14 +307,19 @@ Typical files:
 
 ### Candidate context panel (Mac app)
 
-The selected candidate now includes a compact **Context Panel** that summarizes position-neighborhood heuristics using existing stored data:
-- nearest tracked object summary + angular distance
-- host/no-host style hint from catalog match status
-- crowded vs isolated field indication
-- provenance summary
-- concise context interpretation text
+The selected candidate includes a compact **Context Panel** built from existing stored candidate data (heuristic, non-authoritative), including:
+- RA / DEC
+- context status (rich/limited)
+- host/no-host style context note
+- crowded vs isolated field heuristic
+- catalog context note
+- provenance/source note
+- history count, follow-up priority, interpretation summary
+- image availability summary
+- nearest tracked-object summary (+ angular distance when derivable)
+- concise quick-context explanation for analyst triage
 
-This is heuristic context, not definitive catalog classification.
+Sources used are local data already in Celestial Triage (candidate/detection/image records, catalog match status, interpretation/follow-up summaries), not external authoritative catalogs.
 
 ### Sky map panel (Mac app)
 

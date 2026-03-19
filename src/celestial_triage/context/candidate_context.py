@@ -3,6 +3,8 @@ from __future__ import annotations
 from math import cos, radians, sqrt
 from typing import Any
 
+from celestial_triage.scoring.followup import build_followup_priority
+from celestial_triage.scoring.interpretation import build_interpretation_summary
 from celestial_triage.storage.db import Database
 
 
@@ -12,13 +14,31 @@ def _ang_sep_deg(ra1: float, dec1: float, ra2: float, dec2: float) -> float:
     return sqrt(dra * dra + ddec * ddec)
 
 
+def _as_float(v: Any) -> float | None:
+    try:
+        return float(v)
+    except Exception:
+        return None
+
+
 def build_candidate_context(db: Database, candidate_id: str) -> dict[str, Any]:
     try:
         cand = db.get_candidate_with_features(candidate_id)
     except Exception:
         cand = None
+
     if not cand:
         return {
+            "candidate_id": candidate_id,
+            "ra": None,
+            "dec": None,
+            "context_status": "limited",
+            "host_context_note": "No context available",
+            "crowdedness_note": "unknown",
+            "catalog_context_note": "unknown",
+            "provenance_note": "",
+            "concise_explanation": "Insufficient context data.",
+            # legacy keys used by existing export/UI paths
             "nearest_object_summary": "No context available",
             "host_hint": "unknown",
             "nearest_object_arcsec": None,
@@ -28,8 +48,27 @@ def build_candidate_context(db: Database, candidate_id: str) -> dict[str, Any]:
             "context_interpretation": "Insufficient context data.",
         }
 
-    ra = float(cand.get("average_ra") or 0.0)
-    dec = float(cand.get("average_dec") or 0.0)
+    ra = _as_float(cand.get("average_ra"))
+    dec = _as_float(cand.get("average_dec"))
+    if ra is None or dec is None:
+        return {
+            "candidate_id": candidate_id,
+            "ra": ra,
+            "dec": dec,
+            "context_status": "limited",
+            "host_context_note": "Position unavailable",
+            "crowdedness_note": "unknown",
+            "catalog_context_note": "unknown",
+            "provenance_note": "",
+            "concise_explanation": "Candidate coordinates unavailable; context is limited.",
+            "nearest_object_summary": "No context available",
+            "host_hint": "unknown",
+            "nearest_object_arcsec": None,
+            "field_density": "unknown",
+            "catalog_match_status": "unknown",
+            "provenance_summary": "",
+            "context_interpretation": "Candidate coordinates unavailable; context is limited.",
+        }
 
     nearest: tuple[str, str, float] | None = None
     neighbors_02 = 0
@@ -52,7 +91,11 @@ def build_candidate_context(db: Database, candidate_id: str) -> dict[str, Any]:
         ).fetchall()
 
     for r in rows:
-        dist = _ang_sep_deg(ra, dec, float(r["average_ra"]), float(r["average_dec"]))
+        rra = _as_float(r["average_ra"])
+        rdec = _as_float(r["average_dec"])
+        if rra is None or rdec is None:
+            continue
+        dist = _ang_sep_deg(ra, dec, rra, rdec)
         if dist <= 0.2:
             neighbors_02 += 1
         if dist <= 0.5:
@@ -87,19 +130,49 @@ def build_candidate_context(db: Database, candidate_id: str) -> dict[str, Any]:
     provenance = {str(r["broker_name"]): int(r["n"]) for r in prov_rows}
     provenance_summary = ", ".join([f"{k}:{v}" for k, v in provenance.items()])
 
-    interpretation = (
-        f"Field appears {density}; catalog status is {catalog_match}; "
-        f"host hint: {host_hint}. {nearest_summary}."
+    scores = db.get_latest_scores(candidate_id)
+    score_map = {s["detector_name"]: float(s["score"]) for s in scores}
+    features = cand.get("features", {})
+    review_state = str(cand.get("review_status") or "new")
+    interp = build_interpretation_summary(features, score_map)
+    follow = build_followup_priority(features, score_map, review_state)
+    primary_interp = str(interp.get("primary_interpretation") or "unknown")
+    follow_pri = str(follow.get("priority") or "low")
+
+    images = db.get_images_for_candidate(candidate_id)
+    image_kinds = sorted({str(i.get("kind") or "") for i in images if i.get("kind")})
+    image_note = "none" if not image_kinds else ", ".join(image_kinds)
+
+    context_status = "rich" if (nearest is not None or images or provenance) else "limited"
+
+    concise = (
+        f"{density} field; catalog={catalog_match}; host={host_hint}; "
+        f"follow-up={follow_pri}; interp={primary_interp}."
     )
 
     return {
+        "candidate_id": candidate_id,
+        "ra": ra,
+        "dec": dec,
+        "context_status": context_status,
+        "host_context_note": host_hint,
+        "crowdedness_note": density,
+        "catalog_context_note": catalog_match,
+        "provenance_note": provenance_summary or "unknown",
+        "candidate_history_count": len(db.get_detections_for_candidate(candidate_id)),
+        "followup_priority": follow_pri,
+        "interpretation_summary": primary_interp,
+        "image_availability": image_note,
         "nearest_object_summary": nearest_summary,
-        "host_hint": host_hint,
         "nearest_object_arcsec": nearest_arcsec,
+        "concise_explanation": concise,
+        # legacy-compatible keys
+        "host_hint": host_hint,
         "field_density": density,
-        "neighbor_count_within_0p2deg": neighbors_02,
-        "neighbor_count_within_0p5deg": neighbors_05,
         "catalog_match_status": catalog_match,
         "provenance_summary": provenance_summary,
-        "context_interpretation": interpretation,
+        "context_interpretation": (
+            f"Field appears {density}; catalog status is {catalog_match}; "
+            f"host hint: {host_hint}. {nearest_summary}."
+        ),
     }
