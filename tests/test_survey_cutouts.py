@@ -15,6 +15,9 @@ def test_panstarrs_fetch_saves_png(monkeypatch, tmp_path):
     monkeypatch.setenv("CELESTIAL_TRIAGE_PREVIEW_DIR", str(tmp_path))
 
     def fake_get(url, timeout=20):
+        if "ps1filenames.py" in url:
+            txt = "projcell subcell ra dec filter mjd type filename shortname badflag\n1 1 10.0 -1.0 r 0.0 stack /rings.v3.skycell/0001/file.fits file 0\n"
+            return _Resp(200, text=txt, headers={"content-type": "text/plain"})
         return _Resp(200, content=b"PNGDATA", headers={"content-type": "image/png"})
 
     monkeypatch.setattr("celestial_triage.ingest.survey_cutouts.requests.get", fake_get)
@@ -68,3 +71,31 @@ def test_priority_uses_skyview_when_panstarrs_missing(monkeypatch):
     out = survey_cutouts.ensure_layered_survey_images("cid", "sid", 10.0, 0.0, existing_kinds=set())
     assert out["panstarrs"] is None
     assert out["skyview"] is not None
+
+
+def test_panstarrs_rejects_html_error_response(monkeypatch, tmp_path):
+    monkeypatch.setenv("CELESTIAL_TRIAGE_PREVIEW_DIR", str(tmp_path))
+
+    def fake_get(url, timeout=20):
+        if "ps1filenames.py" in url:
+            txt = "projcell subcell ra dec filter mjd type filename shortname badflag\n1 1 20.0 -29.0 r 0.0 stack /rings.v3.skycell/0001/file.fits file 0\n"
+            return _Resp(200, text=txt, headers={"content-type": "text/plain"})
+        return _Resp(400, content=b"<html>bad</html>", headers={"content-type": "text/html"})
+
+    monkeypatch.setattr("celestial_triage.ingest.survey_cutouts.requests.get", fake_get)
+    _remote, local = survey_cutouts.fetch_panstarrs_preview("c3", 20.0, -29.0)
+    assert local is None
+
+
+def test_panstarrs_rejects_empty_image_body(monkeypatch, tmp_path):
+    monkeypatch.setenv("CELESTIAL_TRIAGE_PREVIEW_DIR", str(tmp_path))
+
+    def fake_get(url, timeout=20):
+        if "ps1filenames.py" in url:
+            txt = "projcell subcell ra dec filter mjd type filename shortname badflag\n1 1 20.0 -29.0 r 0.0 stack /rings.v3.skycell/0001/file.fits file 0\n"
+            return _Resp(200, text=txt, headers={"content-type": "text/plain"})
+        return _Resp(200, content=b"", headers={"content-type": "image/png"})
+
+    monkeypatch.setattr("celestial_triage.ingest.survey_cutouts.requests.get", fake_get)
+    _remote, local = survey_cutouts.fetch_panstarrs_preview("c4", 20.0, -29.0)
+    assert local is None
