@@ -45,7 +45,7 @@ def test_skyview_fallback_uses_html_png_link(monkeypatch, tmp_path):
     assert Path(local).exists()
 
 
-def test_priority_prefers_panstarrs_over_skyview(monkeypatch):
+def test_collects_both_panstarrs_and_skyview_when_available(monkeypatch):
     monkeypatch.setattr(
         "celestial_triage.ingest.survey_cutouts.fetch_panstarrs_preview",
         lambda candidate_id, ra, dec, size=240: ("https://ps", "/tmp/pan.png"),
@@ -56,7 +56,7 @@ def test_priority_prefers_panstarrs_over_skyview(monkeypatch):
     )
     out = survey_cutouts.ensure_layered_survey_images("cid", "sid", 10.0, 0.0, existing_kinds=set())
     assert out["panstarrs"] is not None
-    assert out["skyview"] is None
+    assert out["skyview"] is not None
 
 
 def test_priority_uses_skyview_when_panstarrs_missing(monkeypatch):

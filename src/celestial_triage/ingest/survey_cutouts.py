@@ -208,15 +208,15 @@ def ensure_layered_survey_images(
     else:
         LOGGER.info("Pan-STARRS candidate=%s ra=%.6f dec=%.6f skipped_existing=True", candidate_id, ra, dec)
 
-    # Fallback only if Pan-STARRS unavailable.
-    if "survey_context_panstarrs" in existing_kinds:
-        LOGGER.info("Survey fallback candidate=%s ra=%.6f dec=%.6f panstarrs_available=existing fallback_to_skyview=False", candidate_id, ra, dec)
-    elif "survey_context_skyview" not in existing_kinds and result["panstarrs"] is None:
-        LOGGER.info("Survey fallback candidate=%s ra=%.6f dec=%.6f panstarrs_available=False fallback_to_skyview=True", candidate_id, ra, dec)
+    # Collect SkyView independently when available (do not stop at first success).
+    if "survey_context_skyview" not in existing_kinds:
         s_url, s_local = fetch_skyview_preview(candidate_id, ra, dec)
         if s_local:
             result["skyview"] = {"remote_url": s_url, "local_path": s_local, "kind": "survey_context_skyview"}
-    elif result["panstarrs"] is not None:
-        LOGGER.info("Survey fallback candidate=%s ra=%.6f dec=%.6f panstarrs_available=True fallback_to_skyview=False", candidate_id, ra, dec)
+            LOGGER.info("Survey skyview candidate=%s ra=%.6f dec=%.6f available=True", candidate_id, ra, dec)
+        else:
+            LOGGER.info("Survey skyview candidate=%s ra=%.6f dec=%.6f available=False", candidate_id, ra, dec)
+    else:
+        LOGGER.info("Survey skyview candidate=%s ra=%.6f dec=%.6f skipped_existing=True", candidate_id, ra, dec)
 
     return result

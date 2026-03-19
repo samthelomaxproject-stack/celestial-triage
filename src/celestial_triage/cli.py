@@ -237,7 +237,8 @@ def _link_layered_survey_context_images(db: Database) -> dict[str, int]:
                 metadata={"service": "panstarrs", "ra": ra, "dec": dec},
             )
             pan_ok += 1
-        elif out.get("skyview"):
+
+        if out.get("skyview"):
             s = out["skyview"]
             db.upsert_image_asset(
                 detection_id=det["detection_id"],
@@ -250,7 +251,9 @@ def _link_layered_survey_context_images(db: Database) -> dict[str, int]:
                 metadata={"service": "skyview", "ra": ra, "dec": dec},
             )
             sky_ok += 1
-        else:
+
+        has_existing = ("survey_context_panstarrs" in existing) or ("survey_context_skyview" in existing)
+        if not out.get("panstarrs") and not out.get("skyview") and not has_existing:
             failures += 1
 
     db.relink_image_assets_to_candidates()

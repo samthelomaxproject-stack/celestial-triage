@@ -91,6 +91,7 @@ class AnalystConsoleApp(tk.Tk):
         self._overlay_ra: float | None = None
         self._overlay_dec: float | None = None
         self._overlay_track_offsets: list[tuple[float, float]] = []
+        self.show_motion_overlay = tk.BooleanVar(value=False)
 
         self._build_layout()
         self.refresh_all()
@@ -197,13 +198,20 @@ class AnalystConsoleApp(tk.Tk):
         images_frame = ttk.LabelFrame(parent, text="Image Panel")
         images_frame.grid(row=1, column=0, sticky="nsew", pady=6)
         images_frame.columnconfigure(0, weight=1)
-        images_frame.rowconfigure(0, weight=1)
+        images_frame.rowconfigure(1, weight=1)
+
+        ttk.Checkbutton(
+            images_frame,
+            text="Show motion track",
+            variable=self.show_motion_overlay,
+            command=self.refresh_detail,
+        ).grid(row=0, column=0, sticky="w", padx=6, pady=(4, 2))
 
         self.image_canvas = tk.Canvas(images_frame, height=260, highlightthickness=0)
         self.image_scroll = ttk.Scrollbar(images_frame, orient="vertical", command=self.image_canvas.yview)
         self.image_canvas.configure(yscrollcommand=self.image_scroll.set)
-        self.image_canvas.grid(row=0, column=0, sticky="nsew")
-        self.image_scroll.grid(row=0, column=1, sticky="ns")
+        self.image_canvas.grid(row=1, column=0, sticky="nsew")
+        self.image_scroll.grid(row=1, column=1, sticky="ns")
 
         self.image_panel_container = ttk.Frame(self.image_canvas)
         self.image_canvas_window = self.image_canvas.create_window((0, 0), window=self.image_panel_container, anchor="nw")
@@ -642,6 +650,17 @@ class AnalystConsoleApp(tk.Tk):
         }
         return mapping.get(kind, kind)
 
+    def _image_sort_key(self, img: dict) -> tuple[int, str]:
+        kind = str(img.get("kind") or "")
+        order = {
+            "science": 0,
+            "reference": 1,
+            "difference": 2,
+            "survey_context_panstarrs": 3,
+            "survey_context_skyview": 4,
+        }
+        return (order.get(kind, 99), kind)
+
     def _render_images_panel(self, images: list[dict]) -> None:
         if not images:
             ttk.Label(self.image_panel_container, text="No images available for selected candidate").grid(
@@ -650,7 +669,7 @@ class AnalystConsoleApp(tk.Tk):
             return
 
         row_idx = 0
-        for img in images:
+        for img in sorted(images, key=self._image_sort_key):
             kind = str(img.get("kind") or "unknown")
             header = ttk.Label(
                 self.image_panel_container,
@@ -672,7 +691,8 @@ class AnalystConsoleApp(tk.Tk):
                     canvas = tk.Canvas(self.image_panel_container, highlightthickness=0)
                     canvas.grid(row=row_idx, column=0, sticky="w", padx=8)
                     canvas.create_image(0, 0, anchor="nw", image=photo)
-                    self._draw_motion_track(canvas, photo.width(), photo.height())
+                    if self.show_motion_overlay.get():
+                        self._draw_motion_track(canvas, photo.width(), photo.height())
                     self._draw_candidate_marker(canvas, photo.width(), photo.height())
                     self._draw_radec_overlay(canvas, photo.width(), photo.height())
                     rendered = True
@@ -747,21 +767,17 @@ class AnalystConsoleApp(tk.Tk):
         cx, cy = width // 2, height // 2
         abs_pts = [(cx + dx, cy + dy) for dx, dy in pts]
 
-        # Faint history line
-        flat = [v for p in abs_pts for v in p]
-        canvas.create_line(*flat, fill="#9ec5ff", width=1)
-
-        # Small history dots (older dimmer)
+        # Prior-position dots only (faint) to reduce obstruction around target.
         n = len(abs_pts)
         for i, (x, y) in enumerate(abs_pts[:-1]):
-            shade = int(100 + (120 * (i / max(1, n - 1))))
-            color = f"#{shade:02x}{shade:02x}{255:02x}"
-            canvas.create_oval(x - 2, y - 2, x + 2, y + 2, fill=color, outline="")
+            shade = int(70 + (70 * (i / max(1, n - 1))))
+            color = f"#{shade:02x}{shade:02x}{200:02x}"
+            canvas.create_oval(x - 1.5, y - 1.5, x + 1.5, y + 1.5, fill=color, outline="")
 
-        # Direction arrow toward most recent point
+        # Direction arrow only for last segment.
         x0, y0 = abs_pts[-2]
         x1, y1 = abs_pts[-1]
-        canvas.create_line(x0, y0, x1, y1, fill="#c7ddff", width=2, arrow=tk.LAST)
+        canvas.create_line(x0, y0, x1, y1, fill="#9fb9e8", width=1, arrow=tk.LAST)
 
 def main() -> None:
     app = AnalystConsoleApp()

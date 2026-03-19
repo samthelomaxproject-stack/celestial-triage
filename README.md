@@ -334,19 +334,24 @@ Limitations (first pass):
 
 The Mac app image panel:
 - auto-renders **all available images** for the selected candidate
-- shows broker image assets first when available
-- shows Pan-STARRS context image when available
-- shows SkyView DSS fallback when Pan-STARRS is unavailable
+- keeps a stable display order:
+  1) science
+  2) reference
+  3) difference
+  4) survey_context_panstarrs
+  5) survey_context_skyview
+- collects and displays broker + Pan-STARRS + SkyView when available
 - uses a vertical scrollbar for multi-image candidates
 - prefers local preview PNGs for in-app display
 - falls back to opening remote URLs when only remote links exist
-- **displays a candidate location marker** (red crosshair) on each rendered image to indicate the candidate position
 
 Candidate marker/overlay behavior:
 - draws a small broken-square target marker at image center for the selected candidate
 - shows compact RA/DEC annotation overlay (analyst-style) on rendered images
-- for multi-detection candidates, draws lightweight motion/track history (faint line + small points + direction arrow)
-- for one-detection candidates, only marker + RA/DEC are shown (no synthetic track)
+- includes a **Show motion track** toggle in the image panel (default OFF)
+- when motion track is OFF: marker + RA/DEC only
+- when motion track is ON (multi-detection candidates): faint prior-position dots + last-segment direction arrow
+- for one-detection candidates, no synthetic motion track is drawn
 - assumes survey cutouts are centered on the candidate (true for SkyView, Pan-STARRS, and most broker stamps)
 - future-ready structure supports RA/DEC → pixel mapping for precise positioning when needed
 
