@@ -28,6 +28,7 @@ from celestial_triage.macapp.runner import SafeCliRunner
 from celestial_triage.scoring.followup import build_followup_priority
 from celestial_triage.scoring.interpretation import build_interpretation_summary
 from celestial_triage.storage.db import Database
+from celestial_triage.ui.image_overlay import build_track_offsets, format_radec_overlay
 from celestial_triage.ui.sky_map import nearest_point, prepare_candidate_sky_points
 
 
@@ -87,6 +88,9 @@ class AnalystConsoleApp(tk.Tk):
         self._current_images: list[dict] = []
         self._image_photos: list[tk.PhotoImage] = []
         self._sky_points: list[dict] = []
+        self._overlay_ra: float | None = None
+        self._overlay_dec: float | None = None
+        self._overlay_track_offsets: list[tuple[float, float]] = []
 
         self._build_layout()
         self.refresh_all()
@@ -582,6 +586,9 @@ class AnalystConsoleApp(tk.Tk):
             child.destroy()
         self._image_photos = []
         self._sky_points = []
+        self._overlay_ra = None
+        self._overlay_dec = None
+        self._overlay_track_offsets = []
         cid = self.selected_candidate_id
         if not cid:
             return
@@ -616,6 +623,10 @@ class AnalystConsoleApp(tk.Tk):
         }
         self.detail_text.insert("end", json.dumps(payload, indent=2))
         self.context_text.insert("end", json.dumps(context, indent=2))
+
+        self._overlay_ra = cand.get("average_ra")
+        self._overlay_dec = cand.get("average_dec")
+        self._overlay_track_offsets = build_track_offsets(dets, self._overlay_ra, self._overlay_dec)
 
         self._current_images = images
         self._image_photos = []
@@ -661,8 +672,9 @@ class AnalystConsoleApp(tk.Tk):
                     canvas = tk.Canvas(self.image_panel_container, highlightthickness=0)
                     canvas.grid(row=row_idx, column=0, sticky="w", padx=8)
                     canvas.create_image(0, 0, anchor="nw", image=photo)
-                    # Draw candidate marker at center (assumes image centered on candidate)
+                    self._draw_motion_track(canvas, photo.width(), photo.height())
                     self._draw_candidate_marker(canvas, photo.width(), photo.height())
+                    self._draw_radec_overlay(canvas, photo.width(), photo.height())
                     rendered = True
                 except Exception:
                     rendered = False
@@ -708,6 +720,48 @@ class AnalystConsoleApp(tk.Tk):
         canvas.create_line(cx + gap, cy + half, cx + half, cy + half, fill=marker_color, width=line_width)
         canvas.create_line(cx + half, cy + gap, cx + half, cy + half, fill=marker_color, width=line_width)
 
+
+    def _draw_radec_overlay(self, canvas: tk.Canvas, width: int, height: int) -> None:
+        txt = format_radec_overlay(self._overlay_ra, self._overlay_dec)
+        if not txt:
+            return
+        x, y = 8, max(8, height - 24)
+        tid = canvas.create_text(x, y, anchor="sw", text=txt, fill="#d9f0ff", font=("SF Pro Text", 9, "bold"))
+        bbox = canvas.bbox(tid)
+        if bbox:
+            pad = 3
+            rid = canvas.create_rectangle(
+                bbox[0] - pad,
+                bbox[1] - pad,
+                bbox[2] + pad,
+                bbox[3] + pad,
+                fill="#111722",
+                outline="#2b3a52",
+            )
+            canvas.tag_lower(rid, tid)
+
+    def _draw_motion_track(self, canvas: tk.Canvas, width: int, height: int) -> None:
+        pts = self._overlay_track_offsets
+        if len(pts) < 2:
+            return
+        cx, cy = width // 2, height // 2
+        abs_pts = [(cx + dx, cy + dy) for dx, dy in pts]
+
+        # Faint history line
+        flat = [v for p in abs_pts for v in p]
+        canvas.create_line(*flat, fill="#9ec5ff", width=1)
+
+        # Small history dots (older dimmer)
+        n = len(abs_pts)
+        for i, (x, y) in enumerate(abs_pts[:-1]):
+            shade = int(100 + (120 * (i / max(1, n - 1))))
+            color = f"#{shade:02x}{shade:02x}{255:02x}"
+            canvas.create_oval(x - 2, y - 2, x + 2, y + 2, fill=color, outline="")
+
+        # Direction arrow toward most recent point
+        x0, y0 = abs_pts[-2]
+        x1, y1 = abs_pts[-1]
+        canvas.create_line(x0, y0, x1, y1, fill="#c7ddff", width=2, arrow=tk.LAST)
 
 def main() -> None:
     app = AnalystConsoleApp()

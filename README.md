@@ -342,10 +342,12 @@ The Mac app image panel:
 - falls back to opening remote URLs when only remote links exist
 - **displays a candidate location marker** (red crosshair) on each rendered image to indicate the candidate position
 
-Candidate marker overlay:
-- draws a small red crosshair at the center of each image
+Candidate marker/overlay behavior:
+- draws a small broken-square target marker at image center for the selected candidate
+- shows compact RA/DEC annotation overlay (analyst-style) on rendered images
+- for multi-detection candidates, draws lightweight motion/track history (faint line + small points + direction arrow)
+- for one-detection candidates, only marker + RA/DEC are shown (no synthetic track)
 - assumes survey cutouts are centered on the candidate (true for SkyView, Pan-STARRS, and most broker stamps)
-- designed to be clearly visible but not obstructive
 - future-ready structure supports RA/DEC → pixel mapping for precise positioning when needed
 
 Current limitations:
