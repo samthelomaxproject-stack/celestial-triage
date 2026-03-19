@@ -1,6 +1,7 @@
 import argparse
 import csv
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -266,21 +267,11 @@ def _resolve_lasair_token(lasair_mode: str, cli_token: str | None) -> str | None
     if cli_token:
         return cli_token
     if lasair_mode == "lsst":
-        token = os.getenv("LASAIR_LSST_API_TOKEN", "")
-        if token:
-            return token
-        # Fallback to legacy token
-        return os.getenv("LASAIR_API_TOKEN", "")
-    else:
-        token = os.getenv("LASAIR_ZTF_API_TOKEN", "")
-        if token:
-            return token
-        # Fallback to legacy token
-        return os.getenv("LASAIR_API_TOKEN", "")
+        return os.getenv("LASAIR_LSST_API_TOKEN", "")
+    return os.getenv("LASAIR_ZTF_API_TOKEN", "")
 
 
 def cmd_ingest_lasair(args: argparse.Namespace) -> None:
-    import os
     db = Database(DB_PATH)
     db.init()
 
@@ -836,7 +827,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--conditions", type=str, default="", help="LSST mode WHERE conditions")
     p.add_argument("--fetch-cutouts", action="store_true", help="Fetch object detail/cutout references after ingest")
     p.add_argument("--skip-survey-images", action="store_true", help="Skip layered Pan-STARRS/SkyView survey context retrieval")
-    p.add_argument("--token", type=str, default=None, help="Optional Lasair token (or use LASAIR_API_TOKEN env)")
+    p.add_argument("--token", type=str, default=None, help="Optional Lasair token override (otherwise use LASAIR_LSST_API_TOKEN or LASAIR_ZTF_API_TOKEN by mode)")
     p.set_defaults(func=cmd_ingest_lasair)
 
     p = sub.add_parser("extract-features", help="Compute shared candidate features")

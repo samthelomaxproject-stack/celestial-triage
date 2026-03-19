@@ -52,10 +52,6 @@ class LasairApiAdapter(BrokerAdapter):
             self.token = token or os.getenv("LASAIR_ZTF_API_TOKEN", "")
             default_base = "https://lasair-ztf.lsst.ac.uk/api"
 
-        # Backwards compatibility: also check legacy LASAIR_API_TOKEN if mode-specific not set
-        if not self.token:
-            self.token = os.getenv("LASAIR_API_TOKEN", "")
-
         self.query = query
         self.limit = max(1, min(1000, int(limit)))
         self.days_back = max(1, min(30, int(days_back)))

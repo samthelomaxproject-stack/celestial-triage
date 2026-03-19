@@ -199,3 +199,22 @@ def test_lasair_backoff_retries_on_429(monkeypatch):
     assert len(events) == 1
     assert calls["n"] == 3
     assert sleeps[:2] == [1.0, 2.0]
+
+
+def test_lasair_adapter_uses_mode_specific_env_tokens(monkeypatch):
+    monkeypatch.setenv("LASAIR_LSST_API_TOKEN", "lsst-token")
+    monkeypatch.setenv("LASAIR_ZTF_API_TOKEN", "ztf-token")
+
+    a_lsst = LasairApiAdapter(lasair_mode="lsst")
+    a_ztf = LasairApiAdapter(lasair_mode="ztf")
+
+    assert a_lsst.token == "lsst-token"
+    assert a_ztf.token == "ztf-token"
+
+
+def test_lasair_adapter_mode_specific_default_base_urls():
+    a_lsst = LasairApiAdapter(token="tok", lasair_mode="lsst")
+    a_ztf = LasairApiAdapter(token="tok", lasair_mode="ztf")
+
+    assert a_lsst.base_url == "https://lasair.lsst.ac.uk/api"
+    assert a_ztf.base_url == "https://lasair-ztf.lsst.ac.uk/api"

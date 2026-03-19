@@ -196,7 +196,6 @@ python3 -m celestial_triage.cli ingest-lasair \
 Environment variables:
 - `LASAIR_LSST_API_TOKEN` — for LSST mode (`--lasair-mode lsst`)
 - `LASAIR_ZTF_API_TOKEN` — for ZTF mode (`--lasair-mode ztf`)
-- `LASAIR_API_TOKEN` — legacy fallback (checked if mode-specific token not set)
 
 Broker-specific endpoints:
 - LSST: `https://lasair.lsst.ac.uk/api`

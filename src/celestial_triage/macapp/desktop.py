@@ -272,7 +272,7 @@ class AnalystConsoleApp(tk.Tk):
             if label == "Mode":
                 combo = ttk.Combobox(f, textvariable=var, values=["ztf", "lsst"], state="readonly", width=32)
                 combo.grid(row=i, column=1, sticky="ew")
-                combo.bind("<<ComboboxSelected>>", self._update_ingest_token_warning)
+                combo.bind("<<ComboboxSelected>>", self._on_ingest_mode_change)
             else:
                 ttk.Entry(f, textvariable=var, width=40).grid(row=i, column=1, sticky="ew")
         
@@ -285,32 +285,32 @@ class AnalystConsoleApp(tk.Tk):
         # Initial token check
         self._update_ingest_token_warning()
 
+    def _on_ingest_mode_change(self, _event=None) -> None:
+        mode = self.ingest_mode.get()
+        if mode == "lsst":
+            self.ingest_base_url.set("https://lasair.lsst.ac.uk/api")
+        else:
+            self.ingest_base_url.set("https://lasair-ztf.lsst.ac.uk/api")
+        self._update_ingest_token_warning()
+
     def _update_ingest_token_warning(self, _event=None) -> None:
         """Update token warning based on selected mode."""
         mode = self.ingest_mode.get()
         if mode == "lsst":
-            lsst_token = os.getenv("LASAIR_LSST_API_TOKEN", "")
-            legacy_token = os.getenv("LASAIR_API_TOKEN", "")
+            lsst_token = (self.lasair_lsst_token_var.get().strip() if hasattr(self, "lasair_lsst_token_var") else "") or os.getenv("LASAIR_LSST_API_TOKEN", "")
             if lsst_token:
-                self.ingest_token_status.set(f"✓ LSST token ready (LASAIR_LSST_API_TOKEN)")
+                self.ingest_token_status.set("✓ LSST token ready (LASAIR_LSST_API_TOKEN)")
                 self.ingest_token_warning.configure(foreground="#69c0ff")
-            elif legacy_token:
-                self.ingest_token_status.set(f"⚠ Using legacy token (consider migrating to LASAIR_LSST_API_TOKEN)")
-                self.ingest_token_warning.configure(foreground="#ffa940")
             else:
-                self.ingest_token_status.set(f"⚠ Missing: Set LASAIR_LSST_API_TOKEN for LSST ingest")
+                self.ingest_token_status.set("⚠ Missing: Set LASAIR_LSST_API_TOKEN for LSST ingest")
                 self.ingest_token_warning.configure(foreground="#ff6b6b")
         else:
-            ztf_token = os.getenv("LASAIR_ZTF_API_TOKEN", "")
-            legacy_token = os.getenv("LASAIR_API_TOKEN", "")
+            ztf_token = (self.lasair_ztf_token_var.get().strip() if hasattr(self, "lasair_ztf_token_var") else "") or os.getenv("LASAIR_ZTF_API_TOKEN", "")
             if ztf_token:
-                self.ingest_token_status.set(f"✓ ZTF token ready (LASAIR_ZTF_API_TOKEN)")
+                self.ingest_token_status.set("✓ ZTF token ready (LASAIR_ZTF_API_TOKEN)")
                 self.ingest_token_warning.configure(foreground="#69c0ff")
-            elif legacy_token:
-                self.ingest_token_status.set(f"⚠ Using legacy token (consider migrating to LASAIR_ZTF_API_TOKEN)")
-                self.ingest_token_warning.configure(foreground="#ffa940")
             else:
-                self.ingest_token_status.set(f"⚠ Missing: Set LASAIR_ZTF_API_TOKEN for ZTF ingest")
+                self.ingest_token_status.set("⚠ Missing: Set LASAIR_ZTF_API_TOKEN for ZTF ingest")
                 self.ingest_token_warning.configure(foreground="#ff6b6b")
 
     def _build_review_tab(self) -> None:
@@ -361,11 +361,6 @@ class AnalystConsoleApp(tk.Tk):
         f = self.tab_settings
         self.lasair_lsst_token_var = tk.StringVar(value=self.settings.get("lasair_lsst_api_token", ""))
         self.lasair_ztf_token_var = tk.StringVar(value=self.settings.get("lasair_ztf_api_token", ""))
-        # Legacy fallback
-        legacy_token = self.settings.get("lasair_api_token", "")
-        if legacy_token and not self.lasair_lsst_token_var.get():
-            self.lasair_lsst_token_var.set(legacy_token)
-
         ttk.Label(f, text="Lasair LSST API token").grid(row=0, column=0, sticky="w")
         ttk.Entry(f, textvariable=self.lasair_lsst_token_var, show="*", width=42).grid(row=0, column=1, sticky="ew")
 
@@ -380,6 +375,8 @@ class AnalystConsoleApp(tk.Tk):
             text=f"Stored at: {self.settings_file}",
             foreground="#666",
         ).grid(row=4, column=0, columnspan=2, sticky="w")
+
+        self._update_ingest_token_warning()
 
     def run_ingest_lasair(self) -> None:
         params = {
@@ -441,11 +438,6 @@ class AnalystConsoleApp(tk.Tk):
             extra_env["LASAIR_LSST_API_TOKEN"] = lsst_token
         if ztf_token:
             extra_env["LASAIR_ZTF_API_TOKEN"] = ztf_token
-        # Also set legacy token for backwards compatibility with older code paths
-        if lsst_token:
-            extra_env["LASAIR_API_TOKEN"] = lsst_token
-        elif ztf_token:
-            extra_env["LASAIR_API_TOKEN"] = ztf_token
 
         result = self.runner.run(name, params, cwd=self.repo_root, extra_env=extra_env)
         self.command_history.append({"name": name, "success": result.success, "at": result.ran_at})
