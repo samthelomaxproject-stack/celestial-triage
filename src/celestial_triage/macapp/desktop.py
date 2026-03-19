@@ -689,16 +689,24 @@ class AnalystConsoleApp(tk.Tk):
         Future: extend with RA/DEC -> pixel mapping for precise positioning.
         """
         cx, cy = width // 2, height // 2
-        # Circle marker (small, visible but not obstructive)
         marker_color = "#ff4d4f"  # Red for visibility
-        radius = 6
+        half = 9  # slightly larger marker
+        gap = 4   # broken center gap
         line_width = 2
 
-        # Draw circle outline at center (hollow so object is visible)
-        canvas.create_oval(
-            cx - radius, cy - radius, cx + radius, cy + radius,
-            outline=marker_color, width=line_width, fill=""
-        )
+        # Broken square (four corner segments), leaves center unobstructed.
+        # Top-left
+        canvas.create_line(cx - half, cy - half, cx - gap, cy - half, fill=marker_color, width=line_width)
+        canvas.create_line(cx - half, cy - half, cx - half, cy - gap, fill=marker_color, width=line_width)
+        # Top-right
+        canvas.create_line(cx + gap, cy - half, cx + half, cy - half, fill=marker_color, width=line_width)
+        canvas.create_line(cx + half, cy - half, cx + half, cy - gap, fill=marker_color, width=line_width)
+        # Bottom-left
+        canvas.create_line(cx - half, cy + half, cx - gap, cy + half, fill=marker_color, width=line_width)
+        canvas.create_line(cx - half, cy + gap, cx - half, cy + half, fill=marker_color, width=line_width)
+        # Bottom-right
+        canvas.create_line(cx + gap, cy + half, cx + half, cy + half, fill=marker_color, width=line_width)
+        canvas.create_line(cx + half, cy + gap, cx + half, cy + half, fill=marker_color, width=line_width)
 
 
 def main() -> None:
