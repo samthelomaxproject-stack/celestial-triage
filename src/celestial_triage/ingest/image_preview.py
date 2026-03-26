@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 from PIL import Image
 
 from celestial_triage.utils.logging import get_logger
@@ -61,6 +62,73 @@ def _save_png_from_bytes(data: bytes, out_path: Path) -> bool:
         return False
 
 
+def _fits_bytes_to_uint8(data: bytes) -> np.ndarray | None:
+    """Minimal FITS primary HDU parser fallback (no astropy dependency)."""
+    try:
+        i = 0
+        header_bytes = b""
+        while i + 2880 <= len(data):
+            block = data[i : i + 2880]
+            header_bytes += block
+            i += 2880
+            if b"END" in block:
+                break
+        header_text = header_bytes.decode("ascii", errors="ignore")
+
+        cards = [header_text[j : j + 80] for j in range(0, len(header_text), 80)]
+        kv: dict[str, str] = {}
+        for c in cards:
+            key = c[:8].strip()
+            if not key or key == "END" or "=" not in c[:20]:
+                continue
+            raw = c[10:80].split("/")[0].strip()
+            kv[key] = raw
+
+        bitpix = int(kv.get("BITPIX", "-32"))
+        naxis = int(kv.get("NAXIS", "0"))
+        if naxis < 2:
+            return None
+        w = int(kv.get("NAXIS1", "0"))
+        h = int(kv.get("NAXIS2", "0"))
+        if w <= 0 or h <= 0:
+            return None
+
+        # Data starts at next 2880 boundary after END card block sequence.
+        data_off = ((i + 2879) // 2880) * 2880
+        payload = data[data_off:]
+
+        dtype_map = {
+            8: ">u1",
+            16: ">i2",
+            32: ">i4",
+            -32: ">f4",
+            -64: ">f8",
+        }
+        dt = dtype_map.get(bitpix)
+        if not dt:
+            return None
+
+        n = w * h
+        arr = np.frombuffer(payload, dtype=np.dtype(dt), count=n)
+        if arr.size < n:
+            return None
+        arr = arr.reshape((h, w))
+
+        # Apply FITS scaling keywords when present.
+        bscale = float(kv.get("BSCALE", "1"))
+        bzero = float(kv.get("BZERO", "0"))
+        arr = arr.astype(float) * bscale + bzero
+        arr = np.nan_to_num(arr)
+
+        mn, mx = float(np.min(arr)), float(np.max(arr))
+        if mx > mn:
+            arr = (arr - mn) / (mx - mn)
+        arr = (arr * 255.0).clip(0, 255).astype("uint8")
+        return arr
+    except Exception:
+        return None
+
+
 def render_preview_png(
     source_id: str,
     kind: str,
@@ -70,21 +138,20 @@ def render_preview_png(
     payload_type = str(embedded.get("payload_type") or "embedded")
     data = _to_bytes(embedded)
 
-    # Optional FITS support if astropy is present.
+    # FITS support: astropy when available, otherwise lightweight parser fallback.
     if data and payload_type.startswith("fits"):
+        arr = None
         try:
             from astropy.io import fits  # type: ignore
-            import numpy as np  # type: ignore
 
             hdul = fits.open(io.BytesIO(data))
             arr = hdul[0].data
             if arr is not None:
                 arr = np.nan_to_num(arr)
                 arr = arr.astype(float)
-                mn, mx = float(arr.min()), float(arr.max())
-                if mx > mn:
-                    arr = (arr - mn) / (mx - mn)
-                arr = (arr * 255).clip(0, 255).astype("uint8")
+        except Exception:
+            arr = _fits_bytes_to_uint8(data)
+            if arr is not None:
                 img = Image.fromarray(arr)
                 root = _preview_root() / source_id
                 root.mkdir(parents=True, exist_ok=True)
@@ -93,8 +160,22 @@ def render_preview_png(
                 if not out_path.exists():
                     img.save(out_path, format="PNG")
                 return str(out_path)
-        except Exception as exc:
-            LOGGER.info("FITS preview render skipped/failed for %s: %s", source_id, exc)
+
+        if arr is not None:
+            mn, mx = float(np.min(arr)), float(np.max(arr))
+            if mx > mn:
+                arr = (arr - mn) / (mx - mn)
+            arr = (arr * 255).clip(0, 255).astype("uint8")
+            img = Image.fromarray(arr)
+            root = _preview_root() / source_id
+            root.mkdir(parents=True, exist_ok=True)
+            digest = hashlib.sha256((kind + source_field + payload_type).encode()).hexdigest()[:12]
+            out_path = root / f"{kind}_{digest}.png"
+            if not out_path.exists():
+                img.save(out_path, format="PNG")
+            return str(out_path)
+
+        LOGGER.info("FITS preview render skipped/failed for %s", source_id)
 
     if not data:
         return None

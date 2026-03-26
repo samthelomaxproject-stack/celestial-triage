@@ -145,15 +145,34 @@ def cmd_ingest_jsonl(args: argparse.Namespace) -> None:
 def _download_remote_temporal_preview(source_id: str, kind: str, remote_url: str) -> str | None:
     if not str(remote_url).startswith(("http://", "https://")):
         return None
-    out = Path("image_previews") / str(source_id) / f"broker_{kind}.png"
     try:
         r = requests.get(remote_url, timeout=25)
-        ctype = (r.headers.get("content-type") or "").lower()
-        if r.status_code >= 400 or "image" not in ctype or not r.content:
+        if r.status_code >= 400 or not r.content:
             return None
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_bytes(r.content)
-        return str(out)
+        ctype = (r.headers.get("content-type") or "").lower()
+        is_fits = ("fits" in ctype) or r.content[:20].startswith(b"SIMPLE")
+
+        if is_fits:
+            return render_preview_png(
+                source_id=str(source_id),
+                kind=kind,
+                source_field="detail.remote_fits",
+                embedded={"payload_type": "fits_remote", "bytes": r.content},
+            )
+
+        if "image" in ctype:
+            out = Path("image_previews") / str(source_id) / f"broker_{kind}.png"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(r.content)
+            return str(out)
+
+        # Unknown but maybe still image bytes; try generic decoder pipeline.
+        return render_preview_png(
+            source_id=str(source_id),
+            kind=kind,
+            source_field="detail.remote_unknown",
+            embedded={"payload_type": "remote_bytes", "bytes": r.content},
+        )
     except Exception:
         return None
 
