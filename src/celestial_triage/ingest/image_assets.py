@@ -16,7 +16,7 @@ def _extract_url(value: Any) -> str | None:
     if isinstance(value, str) and value.startswith(("http://", "https://")):
         return value
     if isinstance(value, dict):
-        for k in ("url", "href", "link", "image_url"):
+        for k in ("url", "href", "link", "image_url", "cutoutUrl", "stampUrl"):
             v = value.get(k)
             if isinstance(v, str) and v.startswith(("http://", "https://")):
                 return v
@@ -52,6 +52,20 @@ def _extract_embedded(value: Any) -> dict[str, Any] | None:
     return None
 
 
+def _classify_from_item_dict(item: dict[str, Any]) -> str | None:
+    descriptor = " ".join(
+        [
+            str(item.get("kind") or ""),
+            str(item.get("type") or ""),
+            str(item.get("image_type") or ""),
+            str(item.get("cutout_type") or ""),
+            str(item.get("name") or ""),
+            str(item.get("label") or ""),
+        ]
+    ).strip()
+    return _classify_kind(descriptor) if descriptor else None
+
+
 def extract_image_assets_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
     """Extract image/cutout references from broker payloads.
 
@@ -79,6 +93,19 @@ def extract_image_assets_from_payload(payload: dict[str, Any]) -> list[dict[str,
 
     def walk(obj: Any, path: str = "") -> None:
         if isinstance(obj, dict):
+            # Item-level pattern: {"type": "difference", "url": "..."}
+            item_kind = _classify_from_item_dict(obj)
+            item_url = _extract_url(obj)
+            item_emb = _extract_embedded(obj)
+            if item_kind and (item_url or item_emb):
+                add_item(
+                    kind=item_kind,
+                    source_field=path or "item",
+                    url=item_url,
+                    embedded=item_emb,
+                    metadata={"raw_key": "item_type", "typed_item": True},
+                )
+
             for k, v in obj.items():
                 p = f"{path}.{k}" if path else k
                 kind = _classify_kind(k)

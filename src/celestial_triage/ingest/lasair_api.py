@@ -146,6 +146,9 @@ class LasairApiAdapter(BrokerAdapter):
             f"{self.base_url}/objects/{sid}/",
             f"{self.base_url}/object/{sid}",
             f"{self.base_url}/objects/{sid}",
+            f"{self.base_url}/object/?objectId={sid}",
+            f"{self.base_url}/object/?diaObjectId={sid}",
+            f"{self.base_url}/objects/?objectId={sid}",
         ]
 
         for url in candidates:
@@ -166,6 +169,7 @@ class LasairApiAdapter(BrokerAdapter):
             except ValueError:
                 continue
             if isinstance(payload, dict):
+                payload.setdefault("_ct_detail_endpoint", url)
                 return payload
 
         # LSST fallback: query endpoint for per-object detail row.
@@ -181,8 +185,12 @@ class LasairApiAdapter(BrokerAdapter):
                 if resp.status_code < 400:
                     payload = resp.json()
                     if isinstance(payload, list) and payload:
-                        return payload[0] if isinstance(payload[0], dict) else {"detail": payload[0]}
+                        if isinstance(payload[0], dict):
+                            payload[0].setdefault("_ct_detail_endpoint", qurl)
+                            return payload[0]
+                        return {"detail": payload[0], "_ct_detail_endpoint": qurl}
                     if isinstance(payload, dict):
+                        payload.setdefault("_ct_detail_endpoint", qurl)
                         return payload
             except Exception:
                 return None

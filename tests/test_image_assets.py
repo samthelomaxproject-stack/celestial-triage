@@ -18,6 +18,21 @@ def test_extract_image_assets_from_payload_detects_common_cutouts():
     assert {"science", "reference", "difference"}.issubset(kinds)
 
 
+def test_extract_image_assets_from_typed_item_links():
+    payload = {
+        "candidates": [
+            {"kind": "science", "url": "https://example.org/sci1.png"},
+            {"type": "reference", "href": "https://example.org/ref1.png"},
+            {"image_type": "difference", "image_url": "https://example.org/diff1.png"},
+        ]
+    }
+    items = extract_image_assets_from_payload(payload)
+    by_kind = {i["kind"]: i for i in items}
+    assert by_kind["science"]["url"] == "https://example.org/sci1.png"
+    assert by_kind["reference"]["url"] == "https://example.org/ref1.png"
+    assert by_kind["difference"]["url"] == "https://example.org/diff1.png"
+
+
 def test_image_asset_persistence_and_candidate_link(tmp_path):
     db = Database(tmp_path / "ct.db")
     db.init()

@@ -145,7 +145,9 @@ def _fetch_and_link_lasair_cutouts(db: Database, adapter: LasairApiAdapter, sour
     detail_ok = 0
     detail_fail = 0
     image_assets = 0
+    temporal_links_found = 0
     linked_candidates: set[str] = set()
+    endpoint_hits: dict[str, int] = {}
 
     for source_id in sorted(set(source_ids)):
         checked += 1
@@ -155,9 +157,17 @@ def _fetch_and_link_lasair_cutouts(db: Database, adapter: LasairApiAdapter, sour
             continue
         detail_ok += 1
 
-        image_refs = extract_image_assets_from_payload(detail)
+        endpoint = str(detail.get("_ct_detail_endpoint") or "unknown")
+        endpoint_hits[endpoint] = endpoint_hits.get(endpoint, 0) + 1
+
+        # Temporal broker images only (context surveys handled in separate stage).
+        image_refs = [
+            i for i in extract_image_assets_from_payload(detail) if i.get("kind") in {"science", "reference", "difference"}
+        ]
         if not image_refs:
             continue
+
+        temporal_links_found += len(image_refs)
 
         det = db.get_latest_detection_for_source(source_id)
         if not det:
@@ -183,6 +193,7 @@ def _fetch_and_link_lasair_cutouts(db: Database, adapter: LasairApiAdapter, sour
                 source_field=item.get("source_field", ""),
                 metadata={
                     "detail_fetch": True,
+                    "detail_endpoint": endpoint,
                     **item.get("metadata", {}),
                     "payload_type": (embedded or {}).get("payload_type") if isinstance(embedded, dict) else "url",
                 },
@@ -194,13 +205,17 @@ def _fetch_and_link_lasair_cutouts(db: Database, adapter: LasairApiAdapter, sour
             linked_candidates.add(candidate_id)
 
     db.relink_image_assets_to_candidates()
-    return {
+    summary = {
         "objects_checked": checked,
         "detail_success": detail_ok,
         "detail_failure": detail_fail,
+        "temporal_links_found": temporal_links_found,
         "image_assets_discovered": image_assets,
         "linked_candidate_count": len(linked_candidates),
     }
+    if endpoint_hits:
+        LOGGER.info("Lasair detail endpoints hit: %s", endpoint_hits)
+    return summary
 
 
 def _link_layered_survey_context_images(db: Database) -> dict[str, int]:

@@ -354,7 +354,8 @@ Celestial Triage now uses layered image sourcing in this priority order:
 2. **Pan-STARRS survey context** (`survey_context_panstarrs`)
 3. **SkyView DSS fallback** (`survey_context_skyview`) when Pan-STARRS is unavailable
 
-`ingest-lasair --fetch-cutouts` performs broker detail lookup for image/cutout references.
+`ingest-lasair --fetch-cutouts` performs broker **object/candidate detail** lookup for real temporal image links.
+Query ingest is kept for discovery/metadata; broker temporal images are retrieved from detail/object endpoints when available.
 Survey context retrieval is layered and non-fatal: if one source fails, ingest continues.
 
 ### Preview generation + storage
