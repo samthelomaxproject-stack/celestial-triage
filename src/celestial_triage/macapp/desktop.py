@@ -844,6 +844,13 @@ class AnalystConsoleApp(tk.Tk):
             if local_file and local_file.exists():
                 try:
                     photo = tk.PhotoImage(file=str(local_file))
+                    # Broker FITS-derived previews can be tiny (e.g., 30x30).
+                    # Upscale small images for analyst readability without altering source files.
+                    min_dim = min(photo.width(), photo.height())
+                    if min_dim > 0 and min_dim < 120:
+                        scale = max(1, min(8, 240 // min_dim))
+                        if scale > 1:
+                            photo = photo.zoom(scale, scale)
                     self._image_photos.append(photo)
                     # Use canvas for overlay marker support
                     canvas = tk.Canvas(self.image_panel_container, highlightthickness=0)
