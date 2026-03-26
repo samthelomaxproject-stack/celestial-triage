@@ -69,6 +69,12 @@ def _settings_path() -> Path:
     return cfg / "macapp_settings.json"
 
 
+def _debug_log_path() -> Path:
+    log_dir = Path.home() / "Library" / "Logs" / "CelestialTriage"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir / "debug.log"
+
+
 class AnalystConsoleApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
@@ -80,6 +86,7 @@ class AnalystConsoleApp(tk.Tk):
         self.db = Database(self.db_path)
         self.runner = SafeCliRunner(_resolve_ui_python(self.repo_root))
         self.settings_file = _settings_path()
+        self.debug_log_file = _debug_log_path()
         self.settings = self._load_settings()
 
         self.candidates: list[dict] = []
@@ -94,6 +101,7 @@ class AnalystConsoleApp(tk.Tk):
         self.show_motion_overlay = tk.BooleanVar(value=False)
 
         self._build_layout()
+        self.log(f"[debug] file logging enabled: {self.debug_log_file}")
         self.refresh_all()
 
     def _load_settings(self) -> dict[str, str]:
@@ -464,6 +472,13 @@ class AnalystConsoleApp(tk.Tk):
     def log(self, text: str) -> None:
         self.console_text.insert("end", text + "\n")
         self.console_text.see("end")
+        try:
+            from datetime import datetime, timezone
+            ts = datetime.now(timezone.utc).isoformat()
+            with self.debug_log_file.open("a", encoding="utf-8") as f:
+                f.write(f"[{ts}] {text}\n")
+        except Exception:
+            pass
 
     def refresh_all(self) -> None:
         self.db.init()
