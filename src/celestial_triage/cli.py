@@ -819,6 +819,7 @@ def cmd_plate_solve(args: argparse.Namespace) -> None:
     from celestial_triage.storage.db import Database
     
     db = Database(DB_PATH)
+    db.init()
     
     print(f"Solving image: {args.input}")
     print(f"Backend: {args.backend}")
