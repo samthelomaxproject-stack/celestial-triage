@@ -835,11 +835,15 @@ class AnalystConsoleApp(tk.Tk):
 
             local_path = img.get("local_path")
             remote_url = img.get("remote_url")
+            local_file: Path | None = None
+            if local_path:
+                p = Path(str(local_path))
+                local_file = p if p.is_absolute() else (self.repo_root / p)
 
             rendered = False
-            if local_path and Path(local_path).exists():
+            if local_file and local_file.exists():
                 try:
-                    photo = tk.PhotoImage(file=local_path)
+                    photo = tk.PhotoImage(file=str(local_file))
                     self._image_photos.append(photo)
                     # Use canvas for overlay marker support
                     canvas = tk.Canvas(self.image_panel_container, highlightthickness=0)
@@ -861,8 +865,8 @@ class AnalystConsoleApp(tk.Tk):
 
             btns = ttk.Frame(self.image_panel_container)
             btns.grid(row=row_idx + 1, column=0, sticky="w", padx=8, pady=(2, 8))
-            if local_path and Path(local_path).exists():
-                ttk.Button(btns, text="Open Local", command=lambda p=local_path: webbrowser.open(f"file://{p}")).pack(side=tk.LEFT)
+            if local_file and local_file.exists():
+                ttk.Button(btns, text="Open Local", command=lambda p=str(local_file): webbrowser.open(f"file://{p}")).pack(side=tk.LEFT)
             if remote_url and str(remote_url).startswith(("http://", "https://")):
                 ttk.Button(btns, text="Open Remote", command=lambda u=remote_url: webbrowser.open(str(u))).pack(side=tk.LEFT, padx=6)
 
