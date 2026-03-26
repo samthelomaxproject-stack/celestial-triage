@@ -253,9 +253,31 @@ dist/CelestialTriage.app
 
 ### UI layout
 
-- **Left pane:** candidate queue + review filter
+- **Left pane:** candidate queue + review filter + **Solve Image... button**
 - **Center pane:** candidate detail, detector scores, interpretation/conflict summary, trajectory summary, timeline/provenance, follow-up priority
 - **Right pane:** image panel + command/action tabs + execution logs
+
+### Image-first workflow (Galileo-style)
+
+The **"Solve Image..."** button enables sensor/image-first analysis:
+
+1. Click **"Solve Image..."** in left panel
+2. Select sky image (FITS, PNG, JPG)
+3. System plate-solves image via Astrometry.net
+4. If successful:
+   - Extracts RA/DEC, field size, orientation
+   - Creates new candidate OR links to nearby existing candidate
+   - Candidate appears in queue immediately
+5. Select candidate → normal Context Panel/Sky Map/Review workflow
+
+**Use cases:**
+- Analyze telescope/camera captures without broker ingestion
+- Cross-reference external observations with candidate database
+- Bootstrap triage from raw imaging data
+
+**Requirements:**
+- Astrometry.net API key (set `ASTROMETRY_API_KEY` env var)
+- Register free at: http://nova.astrometry.net/api_help
 
 ### Safe command execution model
 
@@ -588,13 +610,19 @@ Solution:
 
 ## Roadmap
 
-Planned/desired improvements:
+Completed:
+- ✅ Sky map visualization (RA/DEC 2D plot with priority coloring)
+- ✅ Image-first plate solving workflow (Astrometry.net integration)
+- ✅ Context Panel hierarchical refinements
 
-- sky map visualization for candidate tracks
-- automatic image anomaly heuristics/classification
+Planned/desired improvements:
+- Local plate solver backend support (avoid remote API dependency)
+- Automatic image anomaly heuristics/classification
 - Android companion app for analyst workflows
-- real-time broker streaming ingestion paths
-- improved orbit fitting and physical consistency modeling
+- Real-time broker streaming ingestion paths
+- Improved orbit fitting and physical consistency modeling
+- Pan/zoom on sky map
+- Advanced sky projection handling
 
 ---
 
