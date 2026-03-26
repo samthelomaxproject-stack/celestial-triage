@@ -72,3 +72,49 @@ def test_context_handles_invalid_coordinates(tmp_path):
     # non-finite values still produce degraded but safe output
     assert "candidate_id" in ctx
     assert "concise_explanation" in ctx
+
+
+def test_context_includes_plate_solve_provenance_when_linked(tmp_path):
+    db = Database(tmp_path / "ct.db")
+    db.init()
+    db.insert_detection(_det("d1", "S1", 10.0, 10.0, "matched"))
+    db.rebuild_candidates_from_detections()
+    cid = db.get_candidate_id_for_source("S1")
+
+    db.insert_plate_solve(
+        solve_id="solve_test_1",
+        image_path="/tmp/test.png",
+        status="success",
+        ra_center=10.0,
+        dec_center=10.0,
+        field_width_deg=0.1,
+        field_height_deg=0.1,
+        orientation_deg=1.0,
+        pixel_scale_arcsec=1.5,
+        backend="astrometry.net",
+        job_id="123",
+        error_message=None,
+        metadata_json="{}",
+        candidate_id=cid,
+    )
+
+    ctx = build_candidate_context(db, cid)
+    assert ctx["plate_solve_count"] == 1
+    assert ctx["latest_plate_solve_backend"] == "astrometry.net"
+    assert ctx["latest_plate_solve_status"] == "success"
+    assert ctx["latest_plate_solve_timestamp"] is not None
+    assert "plate_solve:1" in ctx["provenance_note"]
+
+
+def test_context_handles_no_plate_solve_rows(tmp_path):
+    db = Database(tmp_path / "ct.db")
+    db.init()
+    db.insert_detection(_det("d1", "S1", 10.0, 10.0, "matched"))
+    db.rebuild_candidates_from_detections()
+    cid = db.get_candidate_id_for_source("S1")
+
+    ctx = build_candidate_context(db, cid)
+    assert ctx["plate_solve_count"] == 0
+    assert ctx["latest_plate_solve_backend"] is None
+    assert ctx["latest_plate_solve_status"] is None
+    assert ctx["latest_plate_solve_timestamp"] is None

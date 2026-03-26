@@ -686,6 +686,12 @@ class AnalystConsoleApp(tk.Tk):
             },
             "timeline_count": len(dets),
             "provenance_sources": sorted({d.get("broker_name", "unknown") for d in dets}),
+            "plate_solve_provenance": {
+                "count": context.get("plate_solve_count", 0),
+                "latest_timestamp": context.get("latest_plate_solve_timestamp"),
+                "latest_backend": context.get("latest_plate_solve_backend"),
+                "latest_status": context.get("latest_plate_solve_status"),
+            },
         }
         self.detail_text.insert("end", json.dumps(payload, indent=2))
         self.context_text.insert("end", self._format_context_panel(context))
@@ -754,6 +760,16 @@ class AnalystConsoleApp(tk.Tk):
         hist_count = g('candidate_history_count', '0')
         sections.append(f"Sources: {prov}")
         sections.append(f"Detections: {hist_count}")
+
+        plate_count = int(context.get("plate_solve_count") or 0)
+        if plate_count > 0:
+            plate_backend = g("latest_plate_solve_backend", "unknown")
+            plate_status = g("latest_plate_solve_status", "unknown")
+            plate_ts = g("latest_plate_solve_timestamp", "unknown")
+            sections.append(f"Plate Solve: {plate_count}")
+            sections.append(f"Last Solve: {plate_ts}")
+            sections.append(f"Solver: {plate_backend} ({plate_status})")
+
         sections.append("")
         
         # === EXPLANATION (concise, readable) ===

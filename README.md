@@ -384,6 +384,10 @@ The selected candidate includes a **Context Panel** optimized for quick analyst 
    - 🏠/∅/? Host association
    - ⚠ Nearest object (if <60 arcsec)
 4. **PROVENANCE** - Detection sources and history count (compact)
+   - includes linked plate-solve provenance when present:
+     - plate_solve_count
+     - latest solve timestamp
+     - latest solver backend/status
 5. **SUMMARY** - Natural-language concise explanation
 
 **Quick-scan indicators** allow rapid pattern recognition without reading full text.

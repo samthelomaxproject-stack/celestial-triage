@@ -38,6 +38,10 @@ def build_candidate_context(db: Database, candidate_id: str) -> dict[str, Any]:
             "catalog_context_note": "unknown",
             "provenance_note": "",
             "concise_explanation": "Insufficient context data.",
+            "plate_solve_count": 0,
+            "latest_plate_solve_timestamp": None,
+            "latest_plate_solve_backend": None,
+            "latest_plate_solve_status": None,
             # legacy keys used by existing export/UI paths
             "nearest_object_summary": "No context available",
             "host_hint": "unknown",
@@ -61,6 +65,10 @@ def build_candidate_context(db: Database, candidate_id: str) -> dict[str, Any]:
             "catalog_context_note": "unknown",
             "provenance_note": "",
             "concise_explanation": "Candidate coordinates unavailable; context is limited.",
+            "plate_solve_count": 0,
+            "latest_plate_solve_timestamp": None,
+            "latest_plate_solve_backend": None,
+            "latest_plate_solve_status": None,
             "nearest_object_summary": "No context available",
             "host_hint": "unknown",
             "nearest_object_arcsec": None,
@@ -86,6 +94,15 @@ def build_candidate_context(db: Database, candidate_id: str) -> dict[str, Any]:
             JOIN candidate_detections cd ON cd.detection_id=d.detection_id
             WHERE cd.candidate_id=?
             GROUP BY d.broker_name
+            """,
+            (candidate_id,),
+        ).fetchall()
+        plate_rows = c.execute(
+            """
+            SELECT solve_id, solved_at, backend, status
+            FROM plate_solves
+            WHERE candidate_id=?
+            ORDER BY solved_at DESC
             """,
             (candidate_id,),
         ).fetchall()
@@ -129,6 +146,18 @@ def build_candidate_context(db: Database, candidate_id: str) -> dict[str, Any]:
 
     provenance = {str(r["broker_name"]): int(r["n"]) for r in prov_rows}
     provenance_summary = ", ".join([f"{k}:{v}" for k, v in provenance.items()])
+
+    plate_solve_count = len(plate_rows)
+    latest_plate = plate_rows[0] if plate_rows else None
+    latest_plate_solve_timestamp = str(latest_plate["solved_at"]) if latest_plate else None
+    latest_plate_solve_backend = str(latest_plate["backend"]) if latest_plate else None
+    latest_plate_solve_status = str(latest_plate["status"]) if latest_plate else None
+    plate_solve_note = (
+        f"plate_solve:{plate_solve_count}"
+        f" ({latest_plate_solve_status or 'unknown'} via {latest_plate_solve_backend or 'unknown'})"
+        if plate_solve_count > 0
+        else ""
+    )
 
     scores = db.get_latest_scores(candidate_id)
     score_map = {s["detector_name"]: float(s["score"]) for s in scores}
@@ -183,7 +212,7 @@ def build_candidate_context(db: Database, candidate_id: str) -> dict[str, Any]:
         "host_context_note": host_hint,
         "crowdedness_note": density,
         "catalog_context_note": catalog_match,
-        "provenance_note": provenance_summary or "unknown",
+        "provenance_note": " | ".join([p for p in [provenance_summary, plate_solve_note] if p]) or "unknown",
         "candidate_history_count": len(db.get_detections_for_candidate(candidate_id)),
         "followup_priority": follow_pri,
         "interpretation_summary": primary_interp,
@@ -191,6 +220,10 @@ def build_candidate_context(db: Database, candidate_id: str) -> dict[str, Any]:
         "nearest_object_summary": nearest_summary,
         "nearest_object_arcsec": nearest_arcsec,
         "concise_explanation": concise,
+        "plate_solve_count": plate_solve_count,
+        "latest_plate_solve_timestamp": latest_plate_solve_timestamp,
+        "latest_plate_solve_backend": latest_plate_solve_backend,
+        "latest_plate_solve_status": latest_plate_solve_status,
         # legacy-compatible keys
         "host_hint": host_hint,
         "field_density": density,
