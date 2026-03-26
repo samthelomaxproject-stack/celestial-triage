@@ -9,6 +9,7 @@ Design allows swapping backends without changing caller interface.
 """
 from __future__ import annotations
 
+import json
 import os
 import time
 from pathlib import Path
@@ -106,15 +107,20 @@ def solve_image_astrometry_net(
     try:
         # Step 1: Login
         login_url = "http://nova.astrometry.net/api/login"
-        login_response = requests.post(login_url, json={"apikey": api_key}, timeout=30)
+        login_response = requests.post(
+            login_url,
+            data={"request-json": json.dumps({"apikey": api_key})},
+            timeout=30,
+        )
         login_response.raise_for_status()
-        session_key = login_response.json().get("session")
-        
-        if not session_key:
+        login_data = login_response.json()
+        session_key = login_data.get("session")
+
+        if login_data.get("status") != "success" or not session_key:
             return PlateSolveResult(
                 status="error",
-                error_message="Failed to obtain session key from Astrometry.net",
-                backend="astrometry.net"
+                error_message=f"Astrometry.net login failed: {login_data.get('errormessage', 'unknown login error')}",
+                backend="astrometry.net",
             )
         
         # Step 2: Upload image
@@ -122,30 +128,36 @@ def solve_image_astrometry_net(
         
         with open(image_path, "rb") as f:
             files = {"file": f}
-            data = {
+            payload: dict[str, Any] = {
                 "session": session_key,
                 "allow_commercial_use": "n",
                 "allow_modifications": "n",
                 "publicly_visible": "n",
+                "scale_units": "arcsecperpix",
             }
-            
+
             # Optional scale hints
             if scale_low is not None:
-                data["scale_lower"] = scale_low
+                payload["scale_lower"] = scale_low
             if scale_high is not None:
-                data["scale_upper"] = scale_high
-            data["scale_units"] = "arcsecperpix"
-            
-            upload_response = requests.post(upload_url, files=files, data=data, timeout=60)
+                payload["scale_upper"] = scale_high
+
+            upload_response = requests.post(
+                upload_url,
+                files=files,
+                data={"request-json": json.dumps(payload)},
+                timeout=60,
+            )
             upload_response.raise_for_status()
-        
-        subid = upload_response.json().get("subid")
-        
-        if not subid:
+
+        upload_data = upload_response.json()
+        subid = upload_data.get("subid")
+
+        if upload_data.get("status") != "success" or not subid:
             return PlateSolveResult(
                 status="error",
-                error_message="Failed to get submission ID from Astrometry.net",
-                backend="astrometry.net"
+                error_message=f"Astrometry.net upload failed: {upload_data.get('errormessage', 'missing subid')}",
+                backend="astrometry.net",
             )
         
         # Step 3: Poll for job completion
@@ -213,6 +225,31 @@ def solve_image_astrometry_net(
                     job_id=str(job_id)
                 )
         
+        # Final edge-check: job may finish near timeout boundary
+        try:
+            info_response = requests.get(job_info_url, timeout=30)
+            info_response.raise_for_status()
+            info = info_response.json()
+            if info.get("status") == "success":
+                calib_url = f"http://nova.astrometry.net/api/jobs/{job_id}/calibration"
+                calib_response = requests.get(calib_url, timeout=30)
+                calib_response.raise_for_status()
+                calib = calib_response.json()
+                return PlateSolveResult(
+                    status="success",
+                    ra_center=calib.get("ra"),
+                    dec_center=calib.get("dec"),
+                    field_width_deg=calib.get("width_arcsec", 0) / 3600.0 if calib.get("width_arcsec") else None,
+                    field_height_deg=calib.get("height_arcsec", 0) / 3600.0 if calib.get("height_arcsec") else None,
+                    orientation_deg=calib.get("orientation"),
+                    pixel_scale_arcsec=calib.get("pixscale"),
+                    backend="astrometry.net",
+                    job_id=str(job_id),
+                    metadata={"calibration": calib, "info": info},
+                )
+        except Exception:
+            pass
+
         # Timeout on job polling
         return PlateSolveResult(
             status="timeout",
