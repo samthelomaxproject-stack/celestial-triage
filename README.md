@@ -269,6 +269,49 @@ It uses `SafeCliRunner` (`runner.py`) to map form inputs to an approved CLI allo
 
 Image references discovered in broker payloads are stored in `image_assets` and linked to detections/candidates.
 
+### Plate solving (image-first workflow)
+
+**New capability:** Solve arbitrary sky images to coordinates using plate solving, then feed into candidate workflow.
+
+**Use case:** Sensor/image-first analysis path (Galileo-style):
+```
+Image → Plate solve → RA/DEC → Candidate creation/association → Context/Review
+```
+
+**CLI command:**
+```bash
+celestial-triage plate-solve --input path/to/image.fits --create-candidate
+```
+
+**Backend support:**
+- **Current:** Astrometry.net remote API (requires `ASTROMETRY_API_KEY`)
+- **Future:** Local plate solver backends
+
+**Behavior:**
+1. Submit image to plate solving backend
+2. Extract RA/DEC center, field size, orientation, pixel scale
+3. Store solve metadata in `plate_solves` table
+4. If `--create-candidate` specified:
+   - Search for nearby candidates (within `--link-radius-deg`, default 0.01° ≈ 36")
+   - If found: Link solve to existing candidate
+   - If not: Create new image-origin candidate with synthetic detection
+5. Solved candidates appear in normal triage workflow (Context Panel, Sky Map, Review)
+
+**Solve result structure:**
+- `ra_center`, `dec_center` - Field center coordinates
+- `field_width_deg`, `field_height_deg` - Field dimensions
+- `orientation_deg` - Image orientation
+- `pixel_scale_arcsec` - Arcsec per pixel
+- `status` - success/failed/timeout/error
+- `backend` - Solver used
+- `job_id` - Backend job reference
+
+**Fail-soft:**
+- Missing API key: Clear error, no crash
+- Solve timeout: Graceful failure with job ID
+- Solve failure: Preserved with error message
+- Does not break existing broker/survey workflows
+
 ### Supported image types
 - `science`
 - `reference` / `template`
@@ -388,6 +431,7 @@ python3 -m celestial_triage.cli <command> [options]
 - `seed-mock` — generate mock events and normalized detections
 - `ingest-jsonl` — ingest external JSONL records
 - `ingest-lasair` — ingest live Lasair API records (ZTF/LSST modes)
+- **`plate-solve`** — solve image to RA/DEC coordinates (image-first workflow)
 - `run-pipeline` — run feature extraction + detector scoring + retention
 - `top-candidates` — list highest-ranked candidates
 - `scenario-report` — summarize mock archetype vs detector outcomes
@@ -396,6 +440,31 @@ python3 -m celestial_triage.cli <command> [options]
 - `export-candidates` — export filtered candidate handoff data (json/csv/md)
 - `bundle-cases` — generate analyst bundle directory (summary + optional details)
 - `launch-ui` — launch Streamlit dashboard
+
+### Plate solving command
+
+```bash
+celestial-triage plate-solve --input image.fits --create-candidate
+```
+
+**Options:**
+- `--input` (required) - Path to FITS or image file
+- `--backend` - Solver backend (default: `astrometry.net`)
+- `--api-key` - API key for remote solver (or set `ASTROMETRY_API_KEY` env)
+- `--timeout` - Max solve time in seconds (default: 300)
+- `--scale-low`, `--scale-high` - Pixel scale hints (arcsec/pixel)
+- `--create-candidate` - Create or link to candidate on success
+- `--link-radius-deg` - Radius for finding nearby candidates (default: 0.01°)
+
+**Output:**
+- RA/DEC center coordinates
+- Field dimensions and orientation
+- Pixel scale
+- Candidate creation/linkage status
+
+**Requirements:**
+- Astrometry.net API key: http://nova.astrometry.net/api_help
+- Set `ASTROMETRY_API_KEY` environment variable
 
 See full options:
 

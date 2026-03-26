@@ -813,6 +813,128 @@ def cmd_launch_ui(args: argparse.Namespace) -> None:
     subprocess.run(["streamlit", "run", "src/celestial_triage/ui/dashboard.py"], check=False)
 
 
+def cmd_plate_solve(args: argparse.Namespace) -> None:
+    """Plate solve image and optionally create/link candidate."""
+    from celestial_triage.ingest.plate_solve import solve_image
+    from celestial_triage.storage.db import Database
+    
+    db = Database(DB_PATH)
+    
+    print(f"Solving image: {args.input}")
+    print(f"Backend: {args.backend}")
+    
+    result = solve_image(
+        image_path=args.input,
+        backend=args.backend,
+        api_key=args.api_key,
+        timeout_sec=args.timeout,
+        scale_low=args.scale_low,
+        scale_high=args.scale_high,
+    )
+    
+    print(f"\nStatus: {result.status}")
+    
+    if result.status == "success":
+        print(f"RA:  {result.ra_center:.6f}°")
+        print(f"DEC: {result.dec_center:+.6f}°")
+        
+        if result.field_width_deg:
+            print(f"Field: {result.field_width_deg * 60:.2f}' × {result.field_height_deg * 60:.2f}'")
+        if result.pixel_scale_arcsec:
+            print(f"Scale: {result.pixel_scale_arcsec:.3f}\"/pixel")
+        if result.orientation_deg is not None:
+            print(f"Orientation: {result.orientation_deg:.2f}°")
+        
+        # Store solve result
+        solve_id = f"solve_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{os.urandom(4).hex()}"
+        
+        candidate_id = None
+        
+        if args.create_candidate and result.ra_center and result.dec_center:
+            # Look for nearby candidates
+            nearby = db.find_nearby_candidates(
+                result.ra_center,
+                result.dec_center,
+                args.link_radius_deg
+            )
+            
+            if nearby:
+                # Link to nearest candidate
+                candidate_id = nearby[0]["candidate_id"]
+                print(f"\nLinked to existing candidate: {candidate_id}")
+                print(f"  Distance: {_ang_dist(result.ra_center, result.dec_center, nearby[0]['average_ra'], nearby[0]['average_dec']) * 3600:.1f}\"")
+            else:
+                # Create new image-origin candidate
+                from celestial_triage.models.entities import NormalizedDetection
+                
+                candidate_id = f"img_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{os.urandom(4).hex()}"
+                source_id = f"plate_solve_{os.urandom(6).hex()}"
+                
+                # Create a synthetic detection for the solved image
+                detection = NormalizedDetection(
+                    detection_id=f"det_{os.urandom(6).hex()}",
+                    source_id=source_id,
+                    broker_name="plate_solve",
+                    timestamp=datetime.now(timezone.utc),
+                    ra=result.ra_center,
+                    dec=result.dec_center,
+                    magnitude=99.0,  # Unknown magnitude
+                    magnitude_change=0.0,
+                    moving_flag=0,
+                    class_label="image_solve",
+                    class_confidence=1.0,
+                    catalog_match_status="unknown",
+                    raw_payload_reference=solve_id,
+                )
+                
+                db.insert_detection(detection)
+                db.associate_detection_to_candidate(
+                    detection.detection_id,
+                    candidate_id,
+                    source_id,
+                    True  # is_new_candidate
+                )
+                
+                print(f"\nCreated new candidate: {candidate_id}")
+        
+        # Store plate solve record
+        db.insert_plate_solve(
+            solve_id=solve_id,
+            image_path=str(args.input),
+            status=result.status,
+            ra_center=result.ra_center,
+            dec_center=result.dec_center,
+            field_width_deg=result.field_width_deg,
+            field_height_deg=result.field_height_deg,
+            orientation_deg=result.orientation_deg,
+            pixel_scale_arcsec=result.pixel_scale_arcsec,
+            backend=result.backend,
+            job_id=result.job_id,
+            error_message=result.error_message,
+            metadata_json=json.dumps(result.metadata),
+            candidate_id=candidate_id,
+        )
+        
+        print(f"\nSolve stored: {solve_id}")
+        
+        if result.job_id:
+            print(f"Job ID: {result.job_id}")
+    
+    else:
+        print(f"Error: {result.error_message}")
+        if result.job_id:
+            print(f"Job ID: {result.job_id}")
+        sys.exit(1)
+
+
+def _ang_dist(ra1: float, dec1: float, ra2: float, dec2: float) -> float:
+    """Angular distance in degrees (simple approximation)."""
+    from math import cos, radians, sqrt
+    dra = (ra2 - ra1) * cos(radians((dec1 + dec2) / 2.0))
+    ddec = dec2 - dec1
+    return sqrt(dra * dra + ddec * ddec)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="celestial-triage CLI (mock-enabled astronomical candidate triage)",
@@ -910,6 +1032,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("launch-ui", help="Launch Streamlit dashboard")
     p.set_defaults(func=cmd_launch_ui)
+
+    p = sub.add_parser("plate-solve", help="Solve image to RA/DEC coordinates")
+    p.add_argument("--input", required=True, help="Path to image file")
+    p.add_argument("--backend", default="astrometry.net", choices=["astrometry.net"], help="Plate solving backend")
+    p.add_argument("--api-key", default=None, help="API key for remote solver (or use ASTROMETRY_API_KEY env)")
+    p.add_argument("--timeout", type=int, default=300, help="Max solve time in seconds")
+    p.add_argument("--scale-low", type=float, default=None, help="Lower pixel scale bound (arcsec/pixel)")
+    p.add_argument("--scale-high", type=float, default=None, help="Upper pixel scale bound (arcsec/pixel)")
+    p.add_argument("--create-candidate", action="store_true", help="Create or link to candidate on successful solve")
+    p.add_argument("--link-radius-deg", type=float, default=0.01, help="Radius for finding nearby candidates (degrees)")
+    p.set_defaults(func=cmd_plate_solve)
 
     return parser
 

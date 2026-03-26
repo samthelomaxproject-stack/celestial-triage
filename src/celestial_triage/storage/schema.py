@@ -125,4 +125,26 @@ CREATE TABLE IF NOT EXISTS image_assets (
   updated_at TEXT NOT NULL,
   UNIQUE(detection_id, kind, remote_url)
 );
+
+CREATE TABLE IF NOT EXISTS plate_solves (
+  solve_id TEXT PRIMARY KEY,
+  image_path TEXT NOT NULL,
+  status TEXT NOT NULL,
+  ra_center REAL,
+  dec_center REAL,
+  field_width_deg REAL,
+  field_height_deg REAL,
+  orientation_deg REAL,
+  pixel_scale_arcsec REAL,
+  backend TEXT NOT NULL,
+  job_id TEXT,
+  error_message TEXT,
+  metadata_json TEXT,
+  solved_at TEXT NOT NULL,
+  candidate_id TEXT,
+  FOREIGN KEY(candidate_id) REFERENCES candidates(candidate_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_plate_solves_coords ON plate_solves(ra_center, dec_center) WHERE ra_center IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_plate_solves_candidate ON plate_solves(candidate_id);
 """

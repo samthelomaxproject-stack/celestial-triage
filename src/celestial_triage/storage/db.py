@@ -555,3 +555,68 @@ class Database:
                 (candidate_id,),
             ).fetchone()
         return dict(row) if row else {"max_score": 0.0, "n_scores": 0}
+    
+    def insert_plate_solve(
+        self,
+        solve_id: str,
+        image_path: str,
+        status: str,
+        ra_center: float | None,
+        dec_center: float | None,
+        field_width_deg: float | None,
+        field_height_deg: float | None,
+        orientation_deg: float | None,
+        pixel_scale_arcsec: float | None,
+        backend: str,
+        job_id: str | None,
+        error_message: str | None,
+        metadata_json: str | None,
+        candidate_id: str | None = None,
+    ) -> None:
+        with self.conn() as c:
+            c.execute(
+                """
+                INSERT INTO plate_solves (
+                    solve_id, image_path, status, ra_center, dec_center,
+                    field_width_deg, field_height_deg, orientation_deg, pixel_scale_arcsec,
+                    backend, job_id, error_message, metadata_json, solved_at, candidate_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    solve_id, image_path, status, ra_center, dec_center,
+                    field_width_deg, field_height_deg, orientation_deg, pixel_scale_arcsec,
+                    backend, job_id, error_message, metadata_json, now_iso(), candidate_id
+                )
+            )
+            c.commit()
+    
+    def get_plate_solve(self, solve_id: str) -> dict[str, Any] | None:
+        with self.conn() as c:
+            row = c.execute(
+                "SELECT * FROM plate_solves WHERE solve_id = ?",
+                (solve_id,)
+            ).fetchone()
+        return dict(row) if row else None
+    
+    def find_nearby_candidates(self, ra: float, dec: float, radius_deg: float = 0.01) -> list[dict[str, Any]]:
+        """Find candidates near given coordinates (simple box search)."""
+        with self.conn() as c:
+            rows = c.execute(
+                """
+                SELECT candidate_id, source_id, average_ra, average_dec
+                FROM candidates
+                WHERE average_ra BETWEEN ? AND ?
+                  AND average_dec BETWEEN ? AND ?
+                """,
+                (ra - radius_deg, ra + radius_deg, dec - radius_deg, dec + radius_deg)
+            ).fetchall()
+        return [dict(r) for r in rows]
+    
+    def link_plate_solve_to_candidate(self, solve_id: str, candidate_id: str) -> None:
+        """Associate a plate solve with an existing candidate."""
+        with self.conn() as c:
+            c.execute(
+                "UPDATE plate_solves SET candidate_id = ? WHERE solve_id = ?",
+                (candidate_id, solve_id)
+            )
+            c.commit()
