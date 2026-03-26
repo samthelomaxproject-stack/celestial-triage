@@ -157,6 +157,7 @@ class AnalystConsoleApp(tk.Tk):
             state="readonly",
         ).pack(side=tk.LEFT, padx=6)
         ttk.Button(filter_row, text="Refresh", command=self.refresh_all).pack(side=tk.LEFT)
+        ttk.Button(filter_row, text="Solve Image...", command=self.open_plate_solve_dialog).pack(side=tk.LEFT, padx=4)
 
         self.candidate_list = tk.Listbox(parent, height=30)
         self.candidate_list.grid(row=2, column=0, sticky="nsew")
@@ -469,6 +470,63 @@ class AnalystConsoleApp(tk.Tk):
         self.load_candidates()
         self.render_sky_map()
         self.refresh_detail()
+    
+    def open_plate_solve_dialog(self) -> None:
+        """Open file dialog and trigger plate solving workflow."""
+        from tkinter import filedialog, messagebox
+        
+        file_path = filedialog.askopenfilename(
+            title="Select Sky Image for Plate Solving",
+            filetypes=[
+                ("FITS files", "*.fits *.fit *.fts"),
+                ("Image files", "*.png *.jpg *.jpeg"),
+                ("All files", "*.*")
+            ]
+        )
+        
+        if not file_path:
+            return
+        
+        self.log(f"[plate-solve] Selected: {file_path}")
+        
+        # Show progress dialog
+        progress_window = tk.Toplevel(self)
+        progress_window.title("Plate Solving...")
+        progress_window.geometry("400x200")
+        progress_window.transient(self)
+        
+        ttk.Label(progress_window, text="Solving image...", font=("SF Pro Text", 12)).pack(pady=20)
+        status_label = ttk.Label(progress_window, text=f"File: {Path(file_path).name}")
+        status_label.pack(pady=10)
+        progress_label = ttk.Label(progress_window, text="Submitting to Astrometry.net...")
+        progress_label.pack(pady=10)
+        
+        progress_window.update()
+        
+        # Run plate solve via CLI
+        result = self.runner.run_command([
+            "plate-solve",
+            "--input", file_path,
+            "--create-candidate"
+        ])
+        
+        progress_window.destroy()
+        
+        if result.success:
+            self.log("[plate-solve] Success!")
+            self.log(result.stdout)
+            messagebox.showinfo(
+                "Plate Solve Complete",
+                f"Image solved successfully!\n\n{result.stdout[:200]}"
+            )
+            self.refresh_all()  # Reload candidates to show new/linked candidate
+        else:
+            self.log(f"[plate-solve] Failed: {result.stderr}")
+            messagebox.showerror(
+                "Plate Solve Failed",
+                f"Solve failed:\n\n{result.stderr[:300]}"
+            )
+    
 
     def load_candidates(self) -> None:
         if not self.db_path.exists():
