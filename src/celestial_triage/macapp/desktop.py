@@ -644,22 +644,66 @@ class AnalystConsoleApp(tk.Tk):
         def g(k: str, d: str = "unknown"):
             v = context.get(k)
             return d if v is None or v == "" else str(v)
-
-        return (
-            f"RA: {g('ra')}\n"
-            f"DEC: {g('dec')}\n"
-            f"Status: {g('context_status')}\n\n"
-            f"Host context: {g('host_context_note')}\n"
-            f"Field density: {g('crowdedness_note')}\n"
-            f"Catalog context: {g('catalog_context_note')}\n"
-            f"Provenance: {g('provenance_note')}\n"
-            f"History points: {g('candidate_history_count', '0')}\n"
-            f"Follow-up: {g('followup_priority')}\n"
-            f"Interpretation: {g('interpretation_summary')}\n"
-            f"Images: {g('image_availability')}\n"
-            f"Nearest: {g('nearest_object_summary')}\n\n"
-            f"Quick context: {g('concise_explanation')}"
-        )
+        
+        # Format RA/DEC with precision
+        ra = context.get('ra')
+        dec = context.get('dec')
+        ra_str = f"{ra:.6f}" if ra is not None else "unknown"
+        dec_str = f"{dec:+.6f}" if dec is not None else "unknown"
+        
+        # Build hierarchical sections
+        sections = []
+        
+        # === POSITION (always visible) ===
+        sections.append("═══ POSITION ═══")
+        sections.append(f"RA:  {ra_str}°")
+        sections.append(f"DEC: {dec_str}°")
+        sections.append("")
+        
+        # === CLASSIFICATION (key decision data) ===
+        sections.append("═══ CLASSIFICATION ═══")
+        interp = g('interpretation_summary', 'unknown')
+        follow = g('followup_priority', 'low')
+        sections.append(f"Primary:  {interp}")
+        sections.append(f"Priority: {follow.upper()}")
+        sections.append("")
+        
+        # === CONTEXT (field environment) ===
+        sections.append("═══ CONTEXT ═══")
+        density = g('crowdedness_note', 'unknown')
+        catalog = g('catalog_match_status', 'unknown')
+        host = g('host_context_note', 'unknown')
+        
+        # Quick-scan indicators
+        density_icon = "🟢" if density == "isolated" else ("🟡" if density == "moderate" else "🔴")
+        catalog_icon = "✓" if catalog in ("matched", "likely_match") else ("✗" if catalog in ("no_match", "poor_match") else "?")
+        host_icon = "🏠" if host == "likely-host-associated" else ("∅" if host == "no-obvious-host" else "?")
+        
+        sections.append(f"{density_icon} Field: {density}")
+        sections.append(f"{catalog_icon} Catalog: {catalog}")
+        sections.append(f"{host_icon} Host: {host}")
+        
+        # Nearest object (if relevant)
+        nearest_arc = context.get('nearest_object_arcsec')
+        if nearest_arc is not None and nearest_arc < 60:  # Only show if < 1 arcmin
+            sections.append(f"⚠ Nearest: {nearest_arc:.1f}\"")
+        
+        sections.append("")
+        
+        # === PROVENANCE (compact) ===
+        sections.append("═══ PROVENANCE ═══")
+        prov = g('provenance_note', 'unknown')
+        hist_count = g('candidate_history_count', '0')
+        sections.append(f"Sources: {prov}")
+        sections.append(f"Detections: {hist_count}")
+        sections.append("")
+        
+        # === EXPLANATION (concise, readable) ===
+        sections.append("═══ SUMMARY ═══")
+        explanation = g('concise_explanation', 'No context available')
+        sections.append(explanation)
+        
+        return "\n".join(sections)
 
     def _image_kind_label(self, kind: str) -> str:
         mapping = {

@@ -307,19 +307,25 @@ Typical files:
 
 ### Candidate context panel (Mac app)
 
-The selected candidate includes a compact **Context Panel** built from existing stored candidate data (heuristic, non-authoritative), including:
-- RA / DEC
-- context status (rich/limited)
-- host/no-host style context note
-- crowded vs isolated field heuristic
-- catalog context note
-- provenance/source note
-- history count, follow-up priority, interpretation summary
-- image availability summary
-- nearest tracked-object summary (+ angular distance when derivable)
-- concise quick-context explanation for analyst triage
+The selected candidate includes a **Context Panel** optimized for quick analyst decision-making.
 
-Sources used are local data already in Celestial Triage (candidate/detection/image records, catalog match status, interpretation/follow-up summaries), not external authoritative catalogs.
+**Panel structure (hierarchical sections):**
+
+1. **POSITION** - RA/DEC coordinates (always visible, high precision)
+2. **CLASSIFICATION** - Primary interpretation + follow-up priority (key decision data)
+3. **CONTEXT** - Field environment with quick-scan indicators:
+   - 🟢/🟡/🔴 Field density (isolated/moderate/crowded)
+   - ✓/✗/? Catalog match status
+   - 🏠/∅/? Host association
+   - ⚠ Nearest object (if <60 arcsec)
+4. **PROVENANCE** - Detection sources and history count (compact)
+5. **SUMMARY** - Natural-language concise explanation
+
+**Quick-scan indicators** allow rapid pattern recognition without reading full text.
+
+**Concise explanation** uses natural language instead of technical jargon (e.g., "Moderately crowded. Strong catalog match, likely host-associated. Interpreted as iso.")
+
+**Sources:** Local data only (candidate/detection/image records, catalog match status, interpretation/follow-up summaries) - not external authoritative catalogs.
 
 ### Sky map panel (Mac app)
 

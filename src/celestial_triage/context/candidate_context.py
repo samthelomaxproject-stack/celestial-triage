@@ -145,10 +145,35 @@ def build_candidate_context(db: Database, candidate_id: str) -> dict[str, Any]:
 
     context_status = "rich" if (nearest is not None or images or provenance) else "limited"
 
-    concise = (
-        f"{density} field; catalog={catalog_match}; host={host_hint}; "
-        f"follow-up={follow_pri}; interp={primary_interp}."
-    )
+    # Build concise, analyst-friendly explanation
+    density_desc = {"isolated": "Isolated field", "moderate": "Moderately crowded", "crowded": "Crowded field"}
+    field_text = density_desc.get(density, f"{density.capitalize()} field")
+    
+    catalog_desc = {
+        "matched": "strong catalog match",
+        "likely_match": "likely catalog match",
+        "poor_match": "weak catalog match",
+        "no_match": "no catalog match"
+    }
+    catalog_text = catalog_desc.get(catalog_match, f"catalog {catalog_match}")
+    
+    host_desc = {
+        "likely-host-associated": "likely host-associated",
+        "no-obvious-host": "no obvious host",
+        "unknown": "host unknown"
+    }
+    host_text = host_desc.get(host_hint, host_hint)
+    
+    # Compose natural-language summary
+    parts = [f"{field_text}.", f"{catalog_text.capitalize()}, {host_text}."]
+    
+    if follow_pri in ("high", "critical"):
+        parts.append(f"{follow_pri.upper()} priority follow-up.")
+    
+    if primary_interp not in ("unknown", "unclear"):
+        parts.append(f"Interpreted as {primary_interp}.")
+    
+    concise = " ".join(parts)
 
     return {
         "candidate_id": candidate_id,
