@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import requests
+
 from celestial_triage.config import DB_PATH
 from celestial_triage.context import build_candidate_context
 from celestial_triage.detectors import (
@@ -140,6 +142,22 @@ def cmd_ingest_jsonl(args: argparse.Namespace) -> None:
     )
 
 
+def _download_remote_temporal_preview(source_id: str, kind: str, remote_url: str) -> str | None:
+    if not str(remote_url).startswith(("http://", "https://")):
+        return None
+    out = Path("image_previews") / str(source_id) / f"broker_{kind}.png"
+    try:
+        r = requests.get(remote_url, timeout=25)
+        ctype = (r.headers.get("content-type") or "").lower()
+        if r.status_code >= 400 or "image" not in ctype or not r.content:
+            return None
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(r.content)
+        return str(out)
+    except Exception:
+        return None
+
+
 def _fetch_and_link_lasair_cutouts(db: Database, adapter: LasairApiAdapter, source_ids: list[str]) -> dict[str, int]:
     checked = 0
     detail_ok = 0
@@ -182,6 +200,12 @@ def _fetch_and_link_lasair_cutouts(db: Database, adapter: LasairApiAdapter, sour
                     kind=item["kind"],
                     source_field=item.get("source_field", ""),
                     embedded=embedded,
+                )
+            if not local_preview and item.get("url"):
+                local_preview = _download_remote_temporal_preview(
+                    source_id=str(source_id),
+                    kind=item["kind"],
+                    remote_url=str(item.get("url")),
                 )
             db.upsert_image_asset(
                 detection_id=det["detection_id"],
