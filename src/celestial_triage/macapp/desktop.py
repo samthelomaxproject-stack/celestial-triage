@@ -125,6 +125,8 @@ class AnalystConsoleApp(tk.Tk):
         self._sky3d_bg_path: Path = _cache_dir() / "arcgis_world_imagery_1024x512.png"
         self._sky3d_popout: tk.Toplevel | None = None
         self._sky3d_popout_canvas: tk.Canvas | None = None
+        self._sky3d_show_imagery = tk.BooleanVar(value=True)
+        self._sky3d_point_scale = tk.DoubleVar(value=1.0)
 
         self._build_layout()
         self.log(f"[debug] file logging enabled: {self.debug_log_file}")
@@ -247,9 +249,10 @@ class AnalystConsoleApp(tk.Tk):
         controls = ttk.Frame(self.sky3d_frame)
         controls.grid(row=0, column=0, sticky="ew", padx=4, pady=(4, 2))
         ttk.Button(controls, text="Reset View", command=self.reset_sky3d_view).pack(side=tk.LEFT)
-        ttk.Button(controls, text="Pop-out 3D", command=self.open_sky3d_popout).pack(side=tk.LEFT, padx=6)
-        ttk.Button(controls, text="Open Cesium 3D", command=self.open_cesium_3d_view).pack(side=tk.LEFT, padx=6)
-        ttk.Label(controls, text="Drag=orbit, Shift+Drag=pan, Wheel=zoom").pack(side=tk.LEFT, padx=8)
+        ttk.Checkbutton(controls, text="Imagery", variable=self._sky3d_show_imagery, command=self.render_sky3d_map).pack(side=tk.LEFT, padx=6)
+        ttk.Label(controls, text="Point size").pack(side=tk.LEFT, padx=(8, 2))
+        ttk.Scale(controls, from_=0.7, to=2.0, variable=self._sky3d_point_scale, command=lambda _=None: self.render_sky3d_map(), length=110).pack(side=tk.LEFT)
+        ttk.Label(controls, text="Double-click to open in-app 3D window").pack(side=tk.LEFT, padx=8)
 
         self.sky3d_canvas = tk.Canvas(self.sky3d_frame, background="#0f1115", highlightthickness=0)
         self.sky3d_canvas.grid(row=1, column=0, sticky="nsew")
@@ -257,6 +260,7 @@ class AnalystConsoleApp(tk.Tk):
         self.sky3d_canvas.bind("<ButtonPress-1>", self.on_sky3d_press)
         self.sky3d_canvas.bind("<B1-Motion>", self.on_sky3d_drag)
         self.sky3d_canvas.bind("<ButtonRelease-1>", self.on_sky3d_release)
+        self.sky3d_canvas.bind("<Double-Button-1>", lambda _e: self.open_sky3d_popout())
         self.sky3d_canvas.bind("<MouseWheel>", self.on_sky3d_wheel)
         self.sky3d_canvas.bind("<Button-4>", self.on_sky3d_wheel)
         self.sky3d_canvas.bind("<Button-5>", self.on_sky3d_wheel)
@@ -778,7 +782,9 @@ class AnalystConsoleApp(tk.Tk):
         bar = ttk.Frame(win)
         bar.grid(row=0, column=0, sticky="ew", padx=6, pady=4)
         ttk.Button(bar, text="Reset View", command=self.reset_sky3d_view).pack(side=tk.LEFT)
-        ttk.Button(bar, text="Open Cesium 3D", command=self.open_cesium_3d_view).pack(side=tk.LEFT, padx=6)
+        ttk.Checkbutton(bar, text="Imagery", variable=self._sky3d_show_imagery, command=self.render_sky3d_map).pack(side=tk.LEFT, padx=6)
+        ttk.Label(bar, text="Point size").pack(side=tk.LEFT, padx=(8, 2))
+        ttk.Scale(bar, from_=0.7, to=2.0, variable=self._sky3d_point_scale, command=lambda _=None: self.render_sky3d_map(), length=140).pack(side=tk.LEFT)
         ttk.Label(bar, text="Drag=orbit, Shift+Drag=pan, Wheel=zoom").pack(side=tk.LEFT, padx=8)
 
         c = tk.Canvas(win, background="#0f1115", highlightthickness=0)
@@ -974,7 +980,7 @@ class AnalystConsoleApp(tk.Tk):
         cos_pitch = math.cos(self._sky3d_pitch)
 
         # ArcGIS World Imagery wrapped onto visible hemisphere (directional texture only).
-        if self._sky3d_bg_img is not None and radius > 5:
+        if bool(self._sky3d_show_imagery.get()) and self._sky3d_bg_img is not None and radius > 5:
             tex = self._sky3d_bg_img
             tw, th = tex.size
             step = 4  # degrees
@@ -1044,10 +1050,12 @@ class AnalystConsoleApp(tk.Tk):
 
         # Draw far hemisphere first.
         draw_items.sort(key=lambda t: t[0])
+        point_scale = float(self._sky3d_point_scale.get() or 1.0)
         for depth, p, x, y in draw_items:
             pri = str(p.get("followup_priority", "low"))
             color = self._priority_color(pri)
-            r = 5 if pri in ("urgent", "high") else 4
+            base_r = 5 if pri in ("urgent", "high") else 4
+            r = max(2, int(round(base_r * point_scale)))
             # Back hemisphere dimming for depth cue only.
             fill = color if depth >= 0 else "#4a4a4a"
             outline = "#ffffff" if p.get("candidate_id") == self.selected_candidate_id else ""
