@@ -811,7 +811,7 @@ class AnalystConsoleApp(tk.Tk):
   <style>
     html,body,#c{width:100%;height:100%;margin:0;background:#0f1115;}
     .lbl{font:12px sans-serif;color:#ddd;position:absolute;left:10px;top:8px;z-index:5;white-space:pre-line;background:rgba(15,17,21,.65);padding:6px 8px;border-radius:6px;}
-    .ctl{position:absolute;right:10px;top:8px;z-index:6;display:flex;gap:6px;align-items:center;background:rgba(15,17,21,.65);padding:6px 8px;border-radius:6px;color:#ddd;font:12px sans-serif;}
+    .ctl{position:absolute;right:10px;bottom:12px;z-index:6;display:flex;gap:6px;align-items:center;background:rgba(15,17,21,.65);padding:6px 8px;border-radius:6px;color:#ddd;font:12px sans-serif;}
     .ctl button{background:#1b1f27;color:#ddd;border:1px solid #333;border-radius:6px;padding:2px 8px;cursor:pointer;}
   </style>
 </head>
