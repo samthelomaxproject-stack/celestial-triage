@@ -8,6 +8,8 @@ import sys
 import webbrowser
 from pathlib import Path
 
+import requests
+
 try:
     import tkinter as tk
     from tkinter import messagebox, ttk
@@ -76,6 +78,12 @@ def _debug_log_path() -> Path:
     return log_dir / "debug.log"
 
 
+def _cache_dir() -> Path:
+    d = Path.home() / ".cache" / "celestial-triage"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 class AnalystConsoleApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
@@ -110,6 +118,8 @@ class AnalystConsoleApp(tk.Tk):
         self._sky3d_pan_y = 0.0
         self._sky3d_drag_start: tuple[float, float] | None = None
         self._sky3d_drag_moved = False
+        self._sky3d_bg_photo: tk.PhotoImage | None = None
+        self._sky3d_bg_path: Path = _cache_dir() / "arcgis_world_imagery_1024x512.png"
 
         self._build_layout()
         self.log(f"[debug] file logging enabled: {self.debug_log_file}")
@@ -782,9 +792,38 @@ class AnalystConsoleApp(tk.Tk):
         self._sky3d_zoom = max(0.4, min(3.5, self._sky3d_zoom * factor))
         self.render_sky3d_map()
 
+    def _ensure_sky3d_background(self) -> None:
+        if self._sky3d_bg_photo is not None:
+            return
+
+        if not self._sky3d_bg_path.exists():
+            url = (
+                "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export"
+                "?bbox=-20037508.34,-20037508.34,20037508.34,20037508.34"
+                "&bboxSR=3857&size=1024,512&imageSR=3857&format=png&f=image"
+            )
+            try:
+                r = requests.get(url, timeout=20)
+                if r.status_code < 400 and r.content:
+                    self._sky3d_bg_path.write_bytes(r.content)
+                    self.log(f"[sky3d] ArcGIS imagery background cached: {self._sky3d_bg_path}")
+                else:
+                    self.log(f"[sky3d] ArcGIS imagery fetch failed status={r.status_code}")
+            except Exception as exc:
+                self.log(f"[sky3d] ArcGIS imagery fetch error: {exc}")
+
+        if self._sky3d_bg_path.exists():
+            try:
+                self._sky3d_bg_photo = tk.PhotoImage(file=str(self._sky3d_bg_path))
+            except Exception as exc:
+                self.log(f"[sky3d] ArcGIS imagery load error: {exc}")
+                self._sky3d_bg_photo = None
+
     def render_sky3d_map(self) -> None:
         c = self.sky3d_canvas
         c.delete("all")
+
+        self._ensure_sky3d_background()
 
         points = prepare_candidate_sky_points(self.db)
         self._sky3d_points = points
@@ -797,6 +836,11 @@ class AnalystConsoleApp(tk.Tk):
         cx = (width / 2.0) + self._sky3d_pan_x
         cy = (height / 2.0) + self._sky3d_pan_y
         radius = min(width, height) * 0.34 * self._sky3d_zoom
+
+        # ArcGIS World Imagery background (default layer)
+        if self._sky3d_bg_photo is not None:
+            c.create_image(width / 2.0, height / 2.0, image=self._sky3d_bg_photo, anchor="center")
+            c.create_rectangle(0, 0, width, height, fill="#000000", stipple="gray50", outline="")
 
         # Sphere guide
         c.create_oval(cx - radius, cy - radius, cx + radius, cy + radius, outline="#2b2f36")
