@@ -61,7 +61,8 @@ def test_lasair_adapter_uses_base_url_override_env(monkeypatch):
     adapter.fetch_events()
 
     assert observed["url"] == "https://lasair.lsst.ac.uk/api/query/"
-    assert "query" in observed["body"]
+    body = observed["body"]
+    assert ("query" in body) or ("selected" in body and "tables" in body and "conditions" in body)
 
 
 def test_lasair_adapter_builds_ztf_payload(monkeypatch):
@@ -218,3 +219,43 @@ def test_lasair_adapter_mode_specific_default_base_urls():
 
     assert a_lsst.base_url == "https://lasair.lsst.ac.uk/api"
     assert a_ztf.base_url == "https://lasair-ztf.lsst.ac.uk/api"
+
+
+def test_lasair_adapter_ztf_default_query_uses_sql_payload(monkeypatch):
+    observed: dict[str, object] = {}
+
+    def fake_post(*args, **kwargs):
+        observed["body"] = kwargs.get("json")
+        return _FakeResp(200, {"candidates": []})
+
+    monkeypatch.setattr("celestial_triage.ingest.lasair_api.requests.post", fake_post)
+
+    adapter = LasairApiAdapter(token="tok", lasair_mode="ztf", query="objectId:*", limit=3)
+    adapter.fetch_events()
+
+    body = observed["body"]
+    assert body["tables"] == "objects"
+    assert "selected" in body
+    assert body["limit"] == 3
+
+
+def test_lasair_object_detail_ztf_html_cutout_fallback(monkeypatch):
+    def fake_get(url, **kwargs):
+        if url.startswith("https://lasair-ztf.lsst.ac.uk/api/"):
+            return _FakeResp(404, {"detail": "not found"})
+        if url.startswith("https://lasair-ztf.lsst.ac.uk/objects/"):
+            html = """
+            <a href='javascript:JS9Popout("/fits/58367/6134658658150150000_cutoutScience");'></a>
+            <a href='javascript:JS9Popout("/fits/58367/6134658658150150000_cutoutTemplate");'></a>
+            <a href='javascript:JS9Popout("/fits/58367/6134658658150150000_cutoutDifference");'></a>
+            """
+            return _FakeResp(200, html)
+        return _FakeResp(404, {})
+
+    monkeypatch.setattr("celestial_triage.ingest.lasair_api.requests.get", fake_get)
+    adapter = LasairApiAdapter(token="tok", base_url="https://lasair-ztf.lsst.ac.uk/api", lasair_mode="ztf")
+    detail = adapter.fetch_object_detail("ZTF17aaaaaal")
+    assert detail is not None
+    cutouts = detail.get("cutouts")
+    assert cutouts
+    assert "science" in cutouts and "reference" in cutouts and "difference" in cutouts

@@ -1,4 +1,5 @@
 import os
+import re
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -124,16 +125,73 @@ class LasairApiAdapter(BrokerAdapter):
             }
             return url, headers, body
 
-        since = (datetime.now(timezone.utc) - timedelta(days=self.days_back)).isoformat()
+        # ZTF currently accepts SQL-style payloads on /query for robust object discovery.
+        # Keep legacy query-string mode when explicitly provided with non-default query.
+        q = (self.query or "").strip()
+        if self.selected and self.tables and self.conditions:
+            body = {
+                "selected": self.selected,
+                "tables": self.tables,
+                "conditions": self.conditions,
+                "limit": request_limit,
+            }
+            return url, headers, body
+
+        if q and q != "objectId:*":
+            since = (datetime.now(timezone.utc) - timedelta(days=self.days_back)).isoformat()
+            body = {
+                "query": q,
+                "limit": request_limit,
+                "since": since,
+            }
+            return url, headers, body
+
         body = {
-            "query": self.query,
+            "selected": "objectId, ramean, decmean, jdgmax",
+            "tables": "objects",
+            "conditions": "1=1",
             "limit": request_limit,
-            "since": since,
         }
         return url, headers, body
 
     def _auth_headers(self) -> dict[str, str]:
         return {"Authorization": f"Token {self.token}", "Content-Type": "application/json"}
+
+    def _extract_ztf_cutouts_from_object_html(self, source_id: str) -> dict[str, Any] | None:
+        """Fallback parser: pull cutout links from object web page HTML for ZTF."""
+        page_url = f"https://lasair-ztf.lsst.ac.uk/objects/{quote(str(source_id), safe='')}/"
+        try:
+            r = requests.get(page_url, timeout=20)
+        except requests.RequestException:
+            return None
+        if r.status_code >= 400:
+            return None
+
+        html = r.text
+        found: dict[str, str] = {}
+        patterns = {
+            "science": r"/fits/[^\"'\s>]*_cutoutScience",
+            "reference": r"/fits/[^\"'\s>]*_cutoutTemplate",
+            "difference": r"/fits/[^\"'\s>]*_cutoutDifference",
+        }
+        for kind, pat in patterns.items():
+            m = re.search(pat, html, flags=re.IGNORECASE)
+            if m:
+                rel = m.group(0)
+                abs_url = f"https://lasair-ztf.lsst.ac.uk{rel}"
+                found[kind] = abs_url
+
+        if not found:
+            return None
+
+        cutouts = {k: {"url": v} for k, v in found.items()}
+        return {
+            "objectId": source_id,
+            "cutouts": cutouts,
+            "_ct_detail_endpoint": page_url,
+            "_ct_detail_status": 200,
+            "_ct_detail_source": "ztf_object_html",
+        }
 
     def fetch_object_detail(self, source_id: str) -> dict[str, Any] | None:
         if not self.token:
@@ -155,7 +213,17 @@ class LasairApiAdapter(BrokerAdapter):
             try:
                 resp = requests.get(url, headers=headers, timeout=20)
             except requests.RequestException:
+                LOGGER.info("Lasair detail request error source=%s endpoint=%s", source_id, url)
                 continue
+
+            LOGGER.info(
+                "Lasair detail attempt source=%s mode=%s endpoint=%s status=%s",
+                source_id,
+                self.lasair_mode,
+                url,
+                resp.status_code,
+            )
+
             if resp.status_code in (401, 403):
                 LOGGER.warning("Lasair detail auth/permission error for %s", source_id)
                 return None
@@ -167,9 +235,17 @@ class LasairApiAdapter(BrokerAdapter):
             try:
                 payload = resp.json()
             except ValueError:
+                LOGGER.info("Lasair detail non-JSON source=%s endpoint=%s", source_id, url)
                 continue
             if isinstance(payload, dict):
                 payload.setdefault("_ct_detail_endpoint", url)
+                payload.setdefault("_ct_detail_status", resp.status_code)
+                if self.lasair_mode == "ztf":
+                    has_cutouts = isinstance(payload.get("cutouts"), dict)
+                    if has_cutouts:
+                        return payload
+                    # Continue to fallback parsing for object-page cutout links.
+                    continue
                 return payload
 
         # LSST fallback: query endpoint for per-object detail row.
@@ -194,6 +270,13 @@ class LasairApiAdapter(BrokerAdapter):
                         return payload
             except Exception:
                 return None
+
+        # ZTF fallback: parse object page cutout links when API detail lacks cutout blocks.
+        if self.lasair_mode == "ztf":
+            html_detail = self._extract_ztf_cutouts_from_object_html(source_id)
+            if html_detail:
+                LOGGER.info("Lasair ZTF detail fallback source=%s endpoint=%s status=%s", source_id, html_detail.get("_ct_detail_endpoint"), html_detail.get("_ct_detail_status"))
+                return html_detail
 
         return None
 
