@@ -122,6 +122,8 @@ class AnalystConsoleApp(tk.Tk):
         self._sky3d_bg_photo: tk.PhotoImage | None = None
         self._sky3d_bg_img: Image.Image | None = None
         self._sky3d_bg_path: Path = _cache_dir() / "arcgis_world_imagery_1024x512.png"
+        self._sky3d_popout: tk.Toplevel | None = None
+        self._sky3d_popout_canvas: tk.Canvas | None = None
 
         self._build_layout()
         self.log(f"[debug] file logging enabled: {self.debug_log_file}")
@@ -244,6 +246,7 @@ class AnalystConsoleApp(tk.Tk):
         controls = ttk.Frame(self.sky3d_frame)
         controls.grid(row=0, column=0, sticky="ew", padx=4, pady=(4, 2))
         ttk.Button(controls, text="Reset View", command=self.reset_sky3d_view).pack(side=tk.LEFT)
+        ttk.Button(controls, text="Pop-out 3D", command=self.open_sky3d_popout).pack(side=tk.LEFT, padx=6)
         ttk.Label(controls, text="Drag=orbit, Shift+Drag=pan, Wheel=zoom").pack(side=tk.LEFT, padx=8)
 
         self.sky3d_canvas = tk.Canvas(self.sky3d_frame, background="#0f1115", highlightthickness=0)
@@ -749,6 +752,48 @@ class AnalystConsoleApp(tk.Tk):
     def on_sky3d_resize(self, _event=None) -> None:
         self.render_sky3d_map()
 
+    def _bind_sky3d_controls(self, canvas: tk.Canvas) -> None:
+        canvas.bind("<Configure>", self.on_sky3d_resize)
+        canvas.bind("<ButtonPress-1>", self.on_sky3d_press)
+        canvas.bind("<B1-Motion>", self.on_sky3d_drag)
+        canvas.bind("<ButtonRelease-1>", self.on_sky3d_release)
+        canvas.bind("<MouseWheel>", self.on_sky3d_wheel)
+        canvas.bind("<Button-4>", self.on_sky3d_wheel)
+        canvas.bind("<Button-5>", self.on_sky3d_wheel)
+
+    def open_sky3d_popout(self) -> None:
+        if self._sky3d_popout is not None and self._sky3d_popout.winfo_exists():
+            self._sky3d_popout.lift()
+            self._sky3d_popout.focus_force()
+            return
+
+        win = tk.Toplevel(self)
+        win.title("Directional 3D Sky View")
+        win.geometry("1100x820")
+        win.columnconfigure(0, weight=1)
+        win.rowconfigure(1, weight=1)
+
+        bar = ttk.Frame(win)
+        bar.grid(row=0, column=0, sticky="ew", padx=6, pady=4)
+        ttk.Button(bar, text="Reset View", command=self.reset_sky3d_view).pack(side=tk.LEFT)
+        ttk.Label(bar, text="Drag=orbit, Shift+Drag=pan, Wheel=zoom").pack(side=tk.LEFT, padx=8)
+
+        c = tk.Canvas(win, background="#0f1115", highlightthickness=0)
+        c.grid(row=1, column=0, sticky="nsew")
+        self._bind_sky3d_controls(c)
+
+        self._sky3d_popout = win
+        self._sky3d_popout_canvas = c
+
+        def _close_popout() -> None:
+            self._sky3d_popout_canvas = None
+            self._sky3d_popout = None
+            win.destroy()
+            self.render_sky3d_map()
+
+        win.protocol("WM_DELETE_WINDOW", _close_popout)
+        self.render_sky3d_map()
+
     def on_sky3d_press(self, event) -> None:
         self._sky3d_drag_start = (float(event.x), float(event.y))
         self._sky3d_drag_moved = False
@@ -821,8 +866,13 @@ class AnalystConsoleApp(tk.Tk):
                 self.log(f"[sky3d] ArcGIS imagery load error: {exc}")
                 self._sky3d_bg_img = None
     def render_sky3d_map(self) -> None:
-        c = self.sky3d_canvas
+        c = self._sky3d_popout_canvas if (self._sky3d_popout_canvas is not None and self._sky3d_popout_canvas.winfo_exists()) else self.sky3d_canvas
         c.delete("all")
+
+        # If pop-out is active, leave a hint in embedded panel.
+        if c is not self.sky3d_canvas:
+            self.sky3d_canvas.delete("all")
+            self.sky3d_canvas.create_text(12, 12, anchor="nw", fill="#bbb", text="Directional 3D is open in pop-out window")
 
         self._ensure_sky3d_background()
 
