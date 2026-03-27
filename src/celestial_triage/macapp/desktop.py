@@ -838,6 +838,11 @@ class AnalystConsoleApp(tk.Tk):
         cy = (height / 2.0) + self._sky3d_pan_y
         radius = min(width, height) * 0.34 * self._sky3d_zoom
 
+        sin_yaw = math.sin(self._sky3d_yaw)
+        cos_yaw = math.cos(self._sky3d_yaw)
+        sin_pitch = math.sin(self._sky3d_pitch)
+        cos_pitch = math.cos(self._sky3d_pitch)
+
         # ArcGIS World Imagery wrapped onto visible hemisphere (directional texture only).
         if self._sky3d_bg_img is not None and radius > 5:
             tex = self._sky3d_bg_img
@@ -878,11 +883,6 @@ class AnalystConsoleApp(tk.Tk):
 
         # Sphere guide
         c.create_oval(cx - radius, cy - radius, cx + radius, cy + radius, outline="#2b2f36")
-
-        sin_yaw = math.sin(self._sky3d_yaw)
-        cos_yaw = math.cos(self._sky3d_yaw)
-        sin_pitch = math.sin(self._sky3d_pitch)
-        cos_pitch = math.cos(self._sky3d_pitch)
 
         draw_items: list[tuple[float, dict[str, Any], float, float]] = []
         for p in points:
