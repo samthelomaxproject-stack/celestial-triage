@@ -4,6 +4,7 @@ import json
 import math
 import os
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import webbrowser
@@ -790,6 +791,7 @@ class AnalystConsoleApp(tk.Tk):
         payload = json.dumps(data)
         color_map = json.dumps(colors)
         selected_json = json.dumps(selected)
+
         html_template = """<!doctype html>
 <html>
 <head>
@@ -797,84 +799,49 @@ class AnalystConsoleApp(tk.Tk):
   <title>Celestial Triage — Cesium 3D</title>
   <script src='https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Cesium.js'></script>
   <link href='https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Widgets/widgets.css' rel='stylesheet'>
-  <style>
-    html,body,#c{width:100%;height:100%;margin:0;background:#0f1115;}
-    .toolbar{position:absolute;left:10px;top:8px;z-index:20;display:flex;gap:8px;align-items:center;background:rgba(12,14,20,.76);padding:8px 10px;border-radius:8px;color:#ddd;font:12px sans-serif}
-    .toolbar select,.toolbar input,.toolbar button{background:#1b1f27;color:#ddd;border:1px solid #333;border-radius:6px;padding:3px 6px}
-  </style>
+  <style>html,body,#c{width:100%;height:100%;margin:0;background:#0f1115;} .lbl{font:12px sans-serif;color:#ddd;position:absolute;left:10px;top:8px;z-index:5;}</style>
 </head>
 <body>
-  <div class='toolbar'>
-    <span>Directional-only globe (no distance assumptions)</span>
-    <label>Basemap
-      <select id='basemap'>
-        <option value='imagery' selected>ArcGIS World Imagery</option>
-        <option value='streets'>ArcGIS World Street Map</option>
-        <option value='none'>None</option>
-      </select>
-    </label>
-    <label>Point size <input id='ps' type='range' min='4' max='20' step='1' value='8'></label>
-    <button id='reset'>Reset View</button>
-  </div>
+  <div class='lbl'>Directional-only globe (no distance assumptions)</div>
   <div id='c'></div>
   <script>
     const pts = __PAYLOAD__;
     const colors = __COLORS__;
     const selected = __SELECTED__;
-    const imageryProviders = {
-      imagery: () => new Cesium.ArcGisMapServerImageryProvider({url:'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer'}),
-      streets: () => new Cesium.ArcGisMapServerImageryProvider({url:'https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer'}),
-      none: () => null,
-    };
     const v = new Cesium.Viewer('c', {
       terrainProvider: new Cesium.EllipsoidTerrainProvider(),
-      imageryProvider: imageryProviders.imagery(),
-      timeline:false, animation:false, baseLayerPicker:false, geocoder:false,
-      sceneModePicker:true, navigationHelpButton:true, homeButton:true
+      baseLayerPicker: true,
+      geocoder: false,
+      homeButton: true,
+      sceneModePicker: true,
+      navigationHelpButton: false,
+      animation: false,
+      timeline: false,
+      fullscreenButton: false
     });
     v.scene.globe.enableLighting = false;
     v.scene.skyAtmosphere.show = false;
     v.scene.globe.depthTestAgainstTerrain = false;
 
-    const entities = [];
-    const ps = document.getElementById('ps');
-    function rebuildEntities() {
-      const base = Number(ps.value || 8);
-      v.entities.removeAll();
-      entities.length = 0;
-      for (const p of pts) {
-        const color = Cesium.Color.fromCssColorString(colors[p.priority] || '#8c8c8c');
-        const isSel = selected && p.candidate_id === selected;
-        const e = v.entities.add({
-          id: p.candidate_id,
-          position: Cesium.Cartesian3.fromDegrees(p.lon, p.lat, 0),
-          point: { pixelSize: isSel ? base + 4 : base, color: color, outlineColor: Cesium.Color.WHITE, outlineWidth: isSel ? 2 : 0 },
-          label: isSel ? { text: p.candidate_id, font:'12px sans-serif', fillColor: Cesium.Color.WHITE, pixelOffset: new Cesium.Cartesian2(10, -12) } : undefined,
-        });
-        entities.push(e);
-      }
+    for (const p of pts) {
+      const color = Cesium.Color.fromCssColorString(colors[p.priority] || '#8c8c8c');
+      const isSel = selected && p.candidate_id === selected;
+      v.entities.add({
+        id: p.candidate_id,
+        position: Cesium.Cartesian3.fromDegrees(p.lon, p.lat, 0),
+        point: { pixelSize: isSel ? 12 : 8, color: color, outlineColor: Cesium.Color.WHITE, outlineWidth: isSel ? 2 : 0 },
+        label: isSel ? { text: p.candidate_id, font:'12px sans-serif', fillColor: Cesium.Color.WHITE, pixelOffset: new Cesium.Cartesian2(10, -12) } : undefined,
+      });
     }
 
-    function flyDefault() {
-      if (pts.length) {
-        const first = pts.find(p => p.candidate_id === selected) || pts[0];
-        v.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(first.lon, first.lat, 16000000) });
-      }
+    if (pts.length) {
+      const first = pts.find(p => p.candidate_id === selected) || pts[0];
+      v.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(first.lon, first.lat, 16000000),
+        orientation: { heading: 0.0, pitch: -Cesium.Math.PI_OVER_FOUR, roll: 0.0 },
+        duration: 1.5
+      });
     }
-
-    rebuildEntities();
-    flyDefault();
-
-    ps.addEventListener('input', rebuildEntities);
-    document.getElementById('reset').addEventListener('click', flyDefault);
-
-    document.getElementById('basemap').addEventListener('change', (ev) => {
-      const key = ev.target.value;
-      v.imageryLayers.removeAll();
-      const providerFactory = imageryProviders[key] || imageryProviders.imagery;
-      const provider = providerFactory();
-      if (provider) v.imageryLayers.addImageryProvider(provider);
-    });
   </script>
 </body>
 </html>"""
@@ -885,8 +852,25 @@ class AnalystConsoleApp(tk.Tk):
         )
         out = Path(tempfile.gettempdir()) / "celestial_triage_cesium_3d.html"
         out.write_text(html, encoding="utf-8")
-        webbrowser.open(out.as_uri())
-        self.log(f"[sky3d] opened Cesium 3D view: {out}")
+
+        runner = Path(tempfile.gettempdir()) / "celestial_triage_cesium_runner.py"
+        runner.write_text(
+            "import sys\n"
+            "import webview\n"
+            "url = sys.argv[1]\n"
+            "webview.create_window('Celestial Triage — 3D Globe', url=url, width=1280, height=900)\n"
+            "webview.start(gui='cocoa')\n",
+            encoding="utf-8",
+        )
+
+        env = os.environ.copy()
+        env.setdefault("PYTHONUNBUFFERED", "1")
+        try:
+            subprocess.Popen([self.runner.python_bin, str(runner), str(out)], env=env)
+            self.log(f"[sky3d] opened in-app Cesium 3D window: {out}")
+        except Exception as exc:
+            self.log(f"[sky3d] in-app popout failed ({exc}); falling back to browser")
+            webbrowser.open(out.as_uri())
 
     def on_sky3d_press(self, event) -> None:
         self._sky3d_drag_start = (float(event.x), float(event.y))
