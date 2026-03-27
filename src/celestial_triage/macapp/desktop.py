@@ -807,11 +807,11 @@ class AnalystConsoleApp(tk.Tk):
     def _image_sort_key(self, img: dict) -> tuple[int, str]:
         kind = str(img.get("kind") or "")
         order = {
-            "science": 0,
-            "reference": 1,
-            "difference": 2,
-            "survey_context_panstarrs": 3,
-            "survey_context_skyview": 4,
+            "survey_context_panstarrs": 0,
+            "survey_context_skyview": 1,
+            "science": 2,
+            "reference": 3,
+            "difference": 4,
         }
         return (order.get(kind, 99), kind)
 
@@ -841,16 +841,19 @@ class AnalystConsoleApp(tk.Tk):
                 local_file = p if p.is_absolute() else (self.repo_root / p)
 
             rendered = False
+            tiny_stamp_note = ""
             if local_file and local_file.exists():
                 try:
                     photo = tk.PhotoImage(file=str(local_file))
+                    native_w, native_h = photo.width(), photo.height()
                     # Broker FITS-derived previews can be tiny (e.g., 30x30).
                     # Upscale small images for analyst readability without altering source files.
-                    min_dim = min(photo.width(), photo.height())
+                    min_dim = min(native_w, native_h)
                     if min_dim > 0 and min_dim < 120:
                         scale = max(1, min(8, 240 // min_dim))
                         if scale > 1:
                             photo = photo.zoom(scale, scale)
+                        tiny_stamp_note = f"Native stamp: {native_w}x{native_h}"
                     self._image_photos.append(photo)
                     # Use canvas for overlay marker support
                     canvas = tk.Canvas(self.image_panel_container, highlightthickness=0)
@@ -870,14 +873,21 @@ class AnalystConsoleApp(tk.Tk):
                     row=row_idx, column=0, sticky="w", padx=8
                 )
 
+            btn_row = row_idx + 1
+            if tiny_stamp_note:
+                ttk.Label(self.image_panel_container, text=tiny_stamp_note).grid(
+                    row=btn_row, column=0, sticky="w", padx=8, pady=(1, 0)
+                )
+                btn_row += 1
+
             btns = ttk.Frame(self.image_panel_container)
-            btns.grid(row=row_idx + 1, column=0, sticky="w", padx=8, pady=(2, 8))
+            btns.grid(row=btn_row, column=0, sticky="w", padx=8, pady=(2, 8))
             if local_file and local_file.exists():
                 ttk.Button(btns, text="Open Local", command=lambda p=str(local_file): webbrowser.open(f"file://{p}")).pack(side=tk.LEFT)
             if remote_url and str(remote_url).startswith(("http://", "https://")):
                 ttk.Button(btns, text="Open Remote", command=lambda u=remote_url: webbrowser.open(str(u))).pack(side=tk.LEFT, padx=6)
 
-            row_idx += 2
+            row_idx = btn_row + 1
 
     def _draw_candidate_marker(self, canvas: tk.Canvas, width: int, height: int) -> None:
         """Draw a candidate location marker at image center.
