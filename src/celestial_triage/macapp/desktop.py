@@ -181,13 +181,26 @@ class AnalystConsoleApp(tk.Tk):
             row=0, column=0, sticky="w"
         )
 
-        self.detail_text = tk.Text(parent, wrap="word")
-        self.detail_text.grid(row=1, column=0, sticky="nsew", pady=6)
+        detail_frame = ttk.Frame(parent)
+        detail_frame.grid(row=1, column=0, sticky="nsew", pady=6)
+        detail_frame.columnconfigure(0, weight=1)
+        detail_frame.rowconfigure(0, weight=1)
+
+        self.detail_text = tk.Text(detail_frame, wrap="word")
+        self.detail_text.grid(row=0, column=0, sticky="nsew")
+        self.detail_scroll = ttk.Scrollbar(detail_frame, orient="vertical", command=self.detail_text.yview)
+        self.detail_scroll.grid(row=0, column=1, sticky="ns")
+        self.detail_text.configure(yscrollcommand=self.detail_scroll.set)
 
         self.context_frame = ttk.LabelFrame(parent, text="Context Panel")
         self.context_frame.grid(row=2, column=0, sticky="nsew", pady=6)
+        self.context_frame.columnconfigure(0, weight=1)
+        self.context_frame.rowconfigure(0, weight=1)
         self.context_text = tk.Text(self.context_frame, height=8, wrap="word")
-        self.context_text.pack(fill="both", expand=True)
+        self.context_text.grid(row=0, column=0, sticky="nsew")
+        self.context_scroll = ttk.Scrollbar(self.context_frame, orient="vertical", command=self.context_text.yview)
+        self.context_scroll.grid(row=0, column=1, sticky="ns")
+        self.context_text.configure(yscrollcommand=self.context_scroll.set)
 
         self.sky_map_frame = ttk.LabelFrame(parent, text="Sky Map (RA/DEC)")
         self.sky_map_frame.grid(row=3, column=0, sticky="nsew", pady=6)
@@ -267,7 +280,7 @@ class AnalystConsoleApp(tk.Tk):
         self.ingest_mode = tk.StringVar(value="lsst")
         self.ingest_base_url = tk.StringVar(value="https://lasair.lsst.ac.uk/api")
         self.ingest_preset = tk.StringVar(value="")
-        self.ingest_limit = tk.StringVar(value="25")
+        self.ingest_limit = tk.StringVar(value="100")
         self.ingest_days_back = tk.StringVar(value="3")
         self.ingest_query = tk.StringVar(value="")
         self.ingest_selected = tk.StringVar(value="diaObjectId, ra, decl")
@@ -556,8 +569,20 @@ class AnalystConsoleApp(tk.Tk):
             rows = [r for r in rows if (r.get("review_status") or "new") == rf]
         self.candidates = rows
         self.candidate_list.delete(0, tk.END)
-        for r in rows:
-            self.candidate_list.insert(tk.END, f"{r['candidate_id']}  [{r.get('review_status','new')}]")
+
+        # Match candidate queue text color to Sky Map follow-up priority colors.
+        priority_by_candidate: dict[str, str] = {}
+        try:
+            for p in prepare_candidate_sky_points(self.db):
+                priority_by_candidate[str(p.get("candidate_id"))] = str(p.get("followup_priority") or "low")
+        except Exception:
+            priority_by_candidate = {}
+
+        for i, r in enumerate(rows):
+            cid = str(r["candidate_id"])
+            self.candidate_list.insert(tk.END, f"{cid}  [{r.get('review_status','new')}]")
+            pr = priority_by_candidate.get(cid, "low")
+            self.candidate_list.itemconfig(i, fg=self._priority_color(pr))
 
     def on_select_candidate(self, _event=None) -> None:
         idx = self.candidate_list.curselection()

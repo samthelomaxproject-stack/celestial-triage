@@ -1017,7 +1017,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--preset", choices=sorted(PRESETS.keys()), default=None, help="Optional query preset")
     p.add_argument("--lasair-mode", choices=["ztf", "lsst"], default="ztf", help="Lasair broker request mode")
     p.add_argument("--base-url", type=str, default=None, help="Lasair API base URL (or use LASAIR_API_BASE_URL env)")
-    p.add_argument("--limit", type=int, default=None, help="Total records requested across batched broker calls")
+    p.add_argument("--limit", type=int, default=100, help="Total records requested across batched broker calls")
     p.add_argument("--batch-size", type=int, default=25, help="Records requested per broker call")
     p.add_argument("--request-delay", type=float, default=2.0, help="Delay seconds between broker calls")
     p.add_argument("--max-retries", type=int, default=3, help="Max retries on HTTP 429 with exponential backoff")
