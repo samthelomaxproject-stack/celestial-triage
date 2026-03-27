@@ -840,7 +840,6 @@ class AnalystConsoleApp(tk.Tk):
         # ArcGIS World Imagery background (default layer)
         if self._sky3d_bg_photo is not None:
             c.create_image(width / 2.0, height / 2.0, image=self._sky3d_bg_photo, anchor="center")
-            c.create_rectangle(0, 0, width, height, fill="#000000", stipple="gray50", outline="")
 
         # Sphere guide
         c.create_oval(cx - radius, cy - radius, cx + radius, cy + radius, outline="#2b2f36")
