@@ -236,6 +236,7 @@ class AnalystConsoleApp(tk.Tk):
         self.sky3d_frame = ttk.Frame(self.sky_view_tabs)
         self.sky_view_tabs.add(self.sky_map_frame, text="Sky Map 2D")
         self.sky_view_tabs.add(self.sky3d_frame, text="Directional 3D")
+        self.sky_view_tabs.bind("<<NotebookTabChanged>>", self.on_sky_view_tab_changed)
 
         self.sky_map_canvas = tk.Canvas(self.sky_map_frame, background="#0f1115", highlightthickness=0)
         self.sky_map_canvas.pack(fill="both", expand=True)
@@ -645,6 +646,14 @@ class AnalystConsoleApp(tk.Tk):
     def on_sky_map_resize(self, event) -> None:
         self.render_sky_map()
 
+    def on_sky_view_tab_changed(self, _event=None) -> None:
+        try:
+            current = self.sky_view_tabs.select()
+            if current and self.sky_view_tabs.nametowidget(current) is self.sky3d_frame:
+                self.open_cesium_3d_view()
+        except Exception:
+            pass
+
 
     def _priority_color(self, p: str) -> str:
         return {
@@ -808,6 +817,8 @@ class AnalystConsoleApp(tk.Tk):
     const pts = __PAYLOAD__;
     const colors = __COLORS__;
     const selected = __SELECTED__;
+    const lbl = document.querySelector('.lbl');
+    if (lbl) lbl.textContent = `Directional-only globe (no distance assumptions) • markers: ${pts.length}`;
     const v = new Cesium.Viewer('c', {
       terrainProvider: new Cesium.EllipsoidTerrainProvider(),
       baseLayerPicker: true,
@@ -829,7 +840,13 @@ class AnalystConsoleApp(tk.Tk):
       v.entities.add({
         id: p.candidate_id,
         position: Cesium.Cartesian3.fromDegrees(p.lon, p.lat, 0),
-        point: { pixelSize: isSel ? 12 : 8, color: color, outlineColor: Cesium.Color.WHITE, outlineWidth: isSel ? 2 : 0 },
+        point: {
+          pixelSize: isSel ? 16 : 12,
+          color: color,
+          outlineColor: Cesium.Color.WHITE,
+          outlineWidth: isSel ? 2 : 1,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY
+        },
         label: isSel ? { text: p.candidate_id, font:'12px sans-serif', fillColor: Cesium.Color.WHITE, pixelOffset: new Cesium.Cartesian2(10, -12) } : undefined,
       });
     }
