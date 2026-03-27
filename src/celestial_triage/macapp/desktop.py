@@ -5,6 +5,7 @@ import math
 import os
 import sqlite3
 import sys
+import tempfile
 import webbrowser
 from pathlib import Path
 
@@ -247,6 +248,7 @@ class AnalystConsoleApp(tk.Tk):
         controls.grid(row=0, column=0, sticky="ew", padx=4, pady=(4, 2))
         ttk.Button(controls, text="Reset View", command=self.reset_sky3d_view).pack(side=tk.LEFT)
         ttk.Button(controls, text="Pop-out 3D", command=self.open_sky3d_popout).pack(side=tk.LEFT, padx=6)
+        ttk.Button(controls, text="Open Cesium 3D", command=self.open_cesium_3d_view).pack(side=tk.LEFT, padx=6)
         ttk.Label(controls, text="Drag=orbit, Shift+Drag=pan, Wheel=zoom").pack(side=tk.LEFT, padx=8)
 
         self.sky3d_canvas = tk.Canvas(self.sky3d_frame, background="#0f1115", highlightthickness=0)
@@ -776,6 +778,7 @@ class AnalystConsoleApp(tk.Tk):
         bar = ttk.Frame(win)
         bar.grid(row=0, column=0, sticky="ew", padx=6, pady=4)
         ttk.Button(bar, text="Reset View", command=self.reset_sky3d_view).pack(side=tk.LEFT)
+        ttk.Button(bar, text="Open Cesium 3D", command=self.open_cesium_3d_view).pack(side=tk.LEFT, padx=6)
         ttk.Label(bar, text="Drag=orbit, Shift+Drag=pan, Wheel=zoom").pack(side=tk.LEFT, padx=8)
 
         c = tk.Canvas(win, background="#0f1115", highlightthickness=0)
@@ -793,6 +796,83 @@ class AnalystConsoleApp(tk.Tk):
 
         win.protocol("WM_DELETE_WINDOW", _close_popout)
         self.render_sky3d_map()
+
+    def open_cesium_3d_view(self) -> None:
+        """Open a true WebGL globe (Cesium), matching Overwatch's 3D behavior."""
+        points = prepare_candidate_sky_points(self.db)
+        data = []
+        for p in points:
+            ra = float(p.get("ra", 0.0))
+            dec = float(p.get("dec", 0.0))
+            # Treat RA as celestial longitude.
+            lon = ((ra + 180.0) % 360.0) - 180.0
+            data.append(
+                {
+                    "candidate_id": str(p.get("candidate_id")),
+                    "ra": ra,
+                    "dec": dec,
+                    "lon": lon,
+                    "lat": dec,
+                    "priority": str(p.get("followup_priority", "low")),
+                }
+            )
+
+        colors = {
+            "urgent": "#ff4d4f",
+            "high": "#ffa940",
+            "medium": "#69c0ff",
+            "low": "#8c8c8c",
+        }
+        selected = self.selected_candidate_id or ""
+        payload = json.dumps(data)
+        color_map = json.dumps(colors)
+        html = f"""<!doctype html>
+<html>
+<head>
+  <meta charset='utf-8' />
+  <title>Celestial Triage — Cesium 3D</title>
+  <script src='https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Cesium.js'></script>
+  <link href='https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Widgets/widgets.css' rel='stylesheet'>
+  <style>html,body,#c{{width:100%;height:100%;margin:0;background:#0f1115;}} .lbl{{font:12px sans-serif;color:#ddd;position:absolute;left:10px;top:8px;z-index:5;}}</style>
+</head>
+<body>
+  <div class='lbl'>Directional-only globe (no distance assumptions)</div>
+  <div id='c'></div>
+  <script>
+    const pts = {payload};
+    const colors = {color_map};
+    const selected = {json.dumps(selected)};
+    const v = new Cesium.Viewer('c', {{
+      terrainProvider: new Cesium.EllipsoidTerrainProvider(),
+      imageryProvider: new Cesium.ArcGisMapServerImageryProvider({{url:'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer'}}),
+      timeline:false, animation:false, baseLayerPicker:false, geocoder:false, sceneModePicker:false
+    }});
+    v.scene.globe.enableLighting = false;
+    v.scene.skyAtmosphere.show = false;
+    v.scene.globe.depthTestAgainstTerrain = false;
+
+    for (const p of pts) {{
+      const color = Cesium.Color.fromCssColorString(colors[p.priority] || '#8c8c8c');
+      const isSel = selected && p.candidate_id === selected;
+      v.entities.add({{
+        id: p.candidate_id,
+        position: Cesium.Cartesian3.fromDegrees(p.lon, p.lat, 0),
+        point: {{ pixelSize: isSel ? 12 : 8, color: color, outlineColor: Cesium.Color.WHITE, outlineWidth: isSel ? 2 : 0 }},
+        label: isSel ? {{ text: p.candidate_id, font:'12px sans-serif', fillColor: Cesium.Color.WHITE, pixelOffset: new Cesium.Cartesian2(10, -12) }} : undefined,
+      }});
+    }}
+
+    if (pts.length) {{
+      const first = pts.find(p => p.candidate_id === selected) || pts[0];
+      v.camera.flyTo({{ destination: Cesium.Cartesian3.fromDegrees(first.lon, first.lat, 16000000) }});
+    }}
+  </script>
+</body>
+</html>"""
+        out = Path(tempfile.gettempdir()) / "celestial_triage_cesium_3d.html"
+        out.write_text(html, encoding="utf-8")
+        webbrowser.open(out.as_uri())
+        self.log(f"[sky3d] opened Cesium 3D view: {out}")
 
     def on_sky3d_press(self, event) -> None:
         self._sky3d_drag_start = (float(event.x), float(event.y))
