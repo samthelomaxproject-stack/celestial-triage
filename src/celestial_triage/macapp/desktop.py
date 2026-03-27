@@ -9,6 +9,7 @@ import webbrowser
 from pathlib import Path
 
 import requests
+from PIL import Image
 
 try:
     import tkinter as tk
@@ -119,6 +120,7 @@ class AnalystConsoleApp(tk.Tk):
         self._sky3d_drag_start: tuple[float, float] | None = None
         self._sky3d_drag_moved = False
         self._sky3d_bg_photo: tk.PhotoImage | None = None
+        self._sky3d_bg_img: Image.Image | None = None
         self._sky3d_bg_path: Path = _cache_dir() / "arcgis_world_imagery_1024x512.png"
 
         self._build_layout()
@@ -793,7 +795,7 @@ class AnalystConsoleApp(tk.Tk):
         self.render_sky3d_map()
 
     def _ensure_sky3d_background(self) -> None:
-        if self._sky3d_bg_photo is not None:
+        if self._sky3d_bg_img is not None:
             return
 
         if not self._sky3d_bg_path.exists():
@@ -814,11 +816,10 @@ class AnalystConsoleApp(tk.Tk):
 
         if self._sky3d_bg_path.exists():
             try:
-                self._sky3d_bg_photo = tk.PhotoImage(file=str(self._sky3d_bg_path))
+                self._sky3d_bg_img = Image.open(self._sky3d_bg_path).convert("RGB")
             except Exception as exc:
                 self.log(f"[sky3d] ArcGIS imagery load error: {exc}")
-                self._sky3d_bg_photo = None
-
+                self._sky3d_bg_img = None
     def render_sky3d_map(self) -> None:
         c = self.sky3d_canvas
         c.delete("all")
@@ -837,9 +838,43 @@ class AnalystConsoleApp(tk.Tk):
         cy = (height / 2.0) + self._sky3d_pan_y
         radius = min(width, height) * 0.34 * self._sky3d_zoom
 
-        # ArcGIS World Imagery background (default layer)
-        if self._sky3d_bg_photo is not None:
-            c.create_image(width / 2.0, height / 2.0, image=self._sky3d_bg_photo, anchor="center")
+        # ArcGIS World Imagery wrapped onto visible hemisphere (directional texture only).
+        if self._sky3d_bg_img is not None and radius > 5:
+            tex = self._sky3d_bg_img
+            tw, th = tex.size
+            step = 4  # degrees
+            for lat_deg in range(-88, 89, step):
+                lat = math.radians(float(lat_deg))
+                cos_lat = math.cos(lat)
+                sin_lat = math.sin(lat)
+                for lon_deg in range(-180, 181, step):
+                    lon = math.radians(float(lon_deg))
+
+                    x = cos_lat * math.cos(lon)
+                    y = cos_lat * math.sin(lon)
+                    z = sin_lat
+
+                    x1 = x * cos_yaw - y * sin_yaw
+                    y1 = x * sin_yaw + y * cos_yaw
+                    z1 = z
+
+                    x2 = x1
+                    y2 = y1 * cos_pitch - z1 * sin_pitch
+                    z2 = y1 * sin_pitch + z1 * cos_pitch
+
+                    if z2 < 0:  # far hemisphere hidden in orthographic view
+                        continue
+
+                    sx = cx + (x2 * radius)
+                    sy = cy - (y2 * radius)
+
+                    u = (lon_deg + 180.0) / 360.0
+                    v = (90.0 - lat_deg) / 180.0
+                    tx = int(max(0, min(tw - 1, round(u * (tw - 1)))))
+                    ty = int(max(0, min(th - 1, round(v * (th - 1)))))
+                    r, g, b = tex.getpixel((tx, ty))
+                    color = f"#{r:02x}{g:02x}{b:02x}"
+                    c.create_rectangle(sx, sy, sx + 2, sy + 2, outline=color, fill=color)
 
         # Sphere guide
         c.create_oval(cx - radius, cy - radius, cx + radius, cy + radius, outline="#2b2f36")
