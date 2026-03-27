@@ -808,10 +808,20 @@ class AnalystConsoleApp(tk.Tk):
   <title>Celestial Triage — Cesium 3D</title>
   <script src='https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Cesium.js'></script>
   <link href='https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Widgets/widgets.css' rel='stylesheet'>
-  <style>html,body,#c{width:100%;height:100%;margin:0;background:#0f1115;} .lbl{font:12px sans-serif;color:#ddd;position:absolute;left:10px;top:8px;z-index:5;white-space:pre-line;}</style>
+  <style>
+    html,body,#c{width:100%;height:100%;margin:0;background:#0f1115;}
+    .lbl{font:12px sans-serif;color:#ddd;position:absolute;left:10px;top:8px;z-index:5;white-space:pre-line;background:rgba(15,17,21,.65);padding:6px 8px;border-radius:6px;}
+    .ctl{position:absolute;right:10px;top:8px;z-index:6;display:flex;gap:6px;align-items:center;background:rgba(15,17,21,.65);padding:6px 8px;border-radius:6px;color:#ddd;font:12px sans-serif;}
+    .ctl button{background:#1b1f27;color:#ddd;border:1px solid #333;border-radius:6px;padding:2px 8px;cursor:pointer;}
+  </style>
 </head>
 <body>
   <div class='lbl' id='meta'>Directional-only globe (no distance assumptions)</div>
+  <div class='ctl'>
+    <label><input id='lockns' type='checkbox' checked> North/South lock</label>
+    <button id='zin'>+</button>
+    <button id='zout'>−</button>
+  </div>
   <div id='c'></div>
   <script>
     const pts = __PAYLOAD__;
@@ -830,6 +840,7 @@ class AnalystConsoleApp(tk.Tk):
       timeline: false,
       fullscreenButton: false
     });
+    const lockNs = document.getElementById('lockns');
     // North/South lock by default (north-up constraint).
     v.camera.constrainedAxis = Cesium.Cartesian3.UNIT_Z;
     v.scene.globe.enableLighting = false;
@@ -861,6 +872,25 @@ class AnalystConsoleApp(tk.Tk):
         duration: 1.5
       });
     }
+
+    // Enforce north-up heading lock when enabled.
+    v.camera.changed.addEventListener(() => {
+      if (!lockNs || !lockNs.checked) return;
+      const c = v.camera;
+      if (Math.abs(c.heading) > 1e-4 || Math.abs(c.roll) > 1e-4) {
+        v.camera.setView({
+          destination: c.positionWC,
+          orientation: { heading: 0.0, pitch: c.pitch, roll: 0.0 }
+        });
+      }
+    });
+
+    document.getElementById('zin').addEventListener('click', () => {
+      v.camera.zoomIn(v.camera.positionCartographic.height * 0.25);
+    });
+    document.getElementById('zout').addEventListener('click', () => {
+      v.camera.zoomOut(v.camera.positionCartographic.height * 0.25);
+    });
 
     // Capture current GPS coordinates for future terrestrial-angle workflows.
     if (navigator.geolocation) {
