@@ -867,11 +867,11 @@ class AnalystConsoleApp(tk.Tk):
                     y2 = y1 * cos_pitch - z1 * sin_pitch
                     z2 = y1 * sin_pitch + z1 * cos_pitch
 
-                    if z2 < 0:  # far hemisphere hidden in orthographic view
+                    if x2 < 0:  # far hemisphere hidden in orthographic view (viewer along +x)
                         continue
 
-                    sx = cx + (x2 * radius)
-                    sy = cy - (y2 * radius)
+                    sx = cx + (y2 * radius)
+                    sy = cy - (z2 * radius)
 
                     u = (lon_deg + 180.0) / 360.0
                     v = (90.0 - lat_deg) / 180.0
@@ -905,13 +905,14 @@ class AnalystConsoleApp(tk.Tk):
             y2 = y1 * cos_pitch - z1 * sin_pitch
             z2 = y1 * sin_pitch + z1 * cos_pitch
 
-            sx = cx + (x2 * radius)
-            sy = cy - (y2 * radius)
+            # Viewer axis is +x; screen plane is y/z.
+            sx = cx + (y2 * radius)
+            sy = cy - (z2 * radius)
             p["_px"] = sx
             p["_py"] = sy
-            draw_items.append((z2, p, sx, sy))
+            draw_items.append((x2, p, sx, sy))
 
-        # Draw back hemisphere first.
+        # Draw far hemisphere first.
         draw_items.sort(key=lambda t: t[0])
         for depth, p, x, y in draw_items:
             pri = str(p.get("followup_priority", "low"))
