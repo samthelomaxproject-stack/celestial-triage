@@ -808,17 +808,17 @@ class AnalystConsoleApp(tk.Tk):
   <title>Celestial Triage — Cesium 3D</title>
   <script src='https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Cesium.js'></script>
   <link href='https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Widgets/widgets.css' rel='stylesheet'>
-  <style>html,body,#c{width:100%;height:100%;margin:0;background:#0f1115;} .lbl{font:12px sans-serif;color:#ddd;position:absolute;left:10px;top:8px;z-index:5;}</style>
+  <style>html,body,#c{width:100%;height:100%;margin:0;background:#0f1115;} .lbl{font:12px sans-serif;color:#ddd;position:absolute;left:10px;top:8px;z-index:5;white-space:pre-line;}</style>
 </head>
 <body>
-  <div class='lbl'>Directional-only globe (no distance assumptions)</div>
+  <div class='lbl' id='meta'>Directional-only globe (no distance assumptions)</div>
   <div id='c'></div>
   <script>
     const pts = __PAYLOAD__;
     const colors = __COLORS__;
     const selected = __SELECTED__;
-    const lbl = document.querySelector('.lbl');
-    if (lbl) lbl.textContent = `Directional-only globe (no distance assumptions) • markers: ${pts.length}`;
+    const lbl = document.getElementById('meta');
+    if (lbl) lbl.textContent = `Directional-only globe (no distance assumptions) • markers: ${pts.length}\nGPS: acquiring...`;
     const v = new Cesium.Viewer('c', {
       terrainProvider: new Cesium.EllipsoidTerrainProvider(),
       baseLayerPicker: true,
@@ -830,6 +830,8 @@ class AnalystConsoleApp(tk.Tk):
       timeline: false,
       fullscreenButton: false
     });
+    // North/South lock by default (north-up constraint).
+    v.camera.constrainedAxis = Cesium.Cartesian3.UNIT_Z;
     v.scene.globe.enableLighting = false;
     v.scene.skyAtmosphere.show = false;
     v.scene.globe.depthTestAgainstTerrain = false;
@@ -858,6 +860,30 @@ class AnalystConsoleApp(tk.Tk):
         orientation: { heading: 0.0, pitch: -Cesium.Math.PI_OVER_FOUR, roll: 0.0 },
         duration: 1.5
       });
+    }
+
+    // Capture current GPS coordinates for future terrestrial-angle workflows.
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
+          const acc = pos.coords.accuracy;
+          if (lbl) lbl.textContent = `Directional-only globe (no distance assumptions) • markers: ${pts.length}\nGPS: ${lat.toFixed(6)}, ${lon.toFixed(6)} (±${Math.round(acc)}m)`;
+          v.entities.add({
+            id: 'observer_gps',
+            position: Cesium.Cartesian3.fromDegrees(lon, lat, 0),
+            point: { pixelSize: 10, color: Cesium.Color.CYAN, outlineColor: Cesium.Color.WHITE, outlineWidth: 2, disableDepthTestDistance: Number.POSITIVE_INFINITY },
+            label: { text: 'Observer', font:'12px sans-serif', fillColor: Cesium.Color.CYAN, pixelOffset: new Cesium.Cartesian2(0, -16) }
+          });
+        },
+        (err) => {
+          if (lbl) lbl.textContent = `Directional-only globe (no distance assumptions) • markers: ${pts.length}\nGPS unavailable: ${err.message}`;
+        },
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
+      );
+    } else if (lbl) {
+      lbl.textContent = `Directional-only globe (no distance assumptions) • markers: ${pts.length}\nGPS unavailable in this webview`;
     }
   </script>
 </body>
