@@ -770,6 +770,11 @@ class AnalystConsoleApp(tk.Tk):
         follow = g('followup_priority', 'low')
         sections.append(f"Primary:  {interp}")
         sections.append(f"Priority: {follow.upper()}")
+
+        anomaly_flag = bool(context.get("anomaly_flag"))
+        anomaly_reason = g("anomaly_reason", "none")
+        sections.append(f"ANOMALY: {'YES' if anomaly_flag else 'NO'}")
+        sections.append(f"Reason: {anomaly_reason}")
         sections.append("")
         
         # === CONTEXT (field environment) ===

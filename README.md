@@ -379,6 +379,10 @@ The selected candidate includes a **Context Panel** optimized for quick analyst 
 
 1. **POSITION** - RA/DEC coordinates (always visible, high precision)
 2. **CLASSIFICATION** - Primary interpretation + follow-up priority (key decision data)
+   - includes anomaly gate:
+     - `ANOMALY: YES/NO`
+     - short anomaly reason
+     - anomaly is only YES when broker temporal images exist **and** at least one risk signal is present
 3. **CONTEXT** - Field environment with quick-scan indicators:
    - 🟢/🟡/🔴 Field density (isolated/moderate/crowded)
    - ✓/✗/? Catalog match status

@@ -21,6 +21,25 @@ def _as_float(v: Any) -> float | None:
         return None
 
 
+def _is_unusual_trajectory(features: dict[str, Any]) -> bool:
+    motion_rate = _as_float(features.get("motion_rate_deg_per_hour"))
+    heading_consistency = _as_float(features.get("heading_change_consistency"))
+    trajectory_quality = features.get("trajectory_quality")
+
+    if motion_rate is not None and motion_rate >= 0.5:
+        return True
+    if heading_consistency is not None and heading_consistency < 0.4:
+        return True
+
+    tq_num = _as_float(trajectory_quality)
+    if tq_num is not None and tq_num < 0.4:
+        return True
+    if isinstance(trajectory_quality, str) and trajectory_quality.lower() in {"poor", "low", "inconsistent"}:
+        return True
+
+    return False
+
+
 def build_candidate_context(db: Database, candidate_id: str) -> dict[str, Any]:
     try:
         cand = db.get_candidate_with_features(candidate_id)
@@ -42,6 +61,8 @@ def build_candidate_context(db: Database, candidate_id: str) -> dict[str, Any]:
             "latest_plate_solve_timestamp": None,
             "latest_plate_solve_backend": None,
             "latest_plate_solve_status": None,
+            "anomaly_flag": False,
+            "anomaly_reason": "Insufficient context data",
             # legacy keys used by existing export/UI paths
             "nearest_object_summary": "No context available",
             "host_hint": "unknown",
@@ -69,6 +90,8 @@ def build_candidate_context(db: Database, candidate_id: str) -> dict[str, Any]:
             "latest_plate_solve_timestamp": None,
             "latest_plate_solve_backend": None,
             "latest_plate_solve_status": None,
+            "anomaly_flag": False,
+            "anomaly_reason": "Insufficient context data",
             "nearest_object_summary": "No context available",
             "host_hint": "unknown",
             "nearest_object_arcsec": None,
@@ -172,6 +195,30 @@ def build_candidate_context(db: Database, candidate_id: str) -> dict[str, Any]:
     image_kinds = sorted({str(i.get("kind") or "") for i in images if i.get("kind")})
     image_note = "none" if not image_kinds else ", ".join(image_kinds)
 
+    temporal_kinds = {"science", "reference", "difference"}
+    has_temporal_images = any(k in temporal_kinds for k in image_kinds)
+
+    anomaly_signals: list[str] = []
+    if catalog_match in {"poor_match", "no_match", "unknown"}:
+        anomaly_signals.append("low/no catalog match")
+    if host_hint in {"no-obvious-host", "unknown"}:
+        anomaly_signals.append("weak/no host association")
+    if float(score_map.get("unknown_mover_detector", 0.0)) >= 0.65:
+        anomaly_signals.append("elevated unknown_mover_detector")
+    if float(score_map.get("iso_detector", 0.0)) >= 0.65:
+        anomaly_signals.append("elevated iso_detector")
+    if _is_unusual_trajectory(features):
+        anomaly_signals.append("unusual trajectory metrics")
+
+    anomaly_flag = bool(has_temporal_images and anomaly_signals)
+    anomaly_reason = (
+        "; ".join(anomaly_signals[:2])
+        if anomaly_flag
+        else (
+            "No broker temporal images" if not has_temporal_images else "Temporal images present but anomaly criteria not met"
+        )
+    )
+
     context_status = "rich" if (nearest is not None or images or provenance) else "limited"
 
     # Build concise, analyst-friendly explanation
@@ -224,6 +271,8 @@ def build_candidate_context(db: Database, candidate_id: str) -> dict[str, Any]:
         "latest_plate_solve_timestamp": latest_plate_solve_timestamp,
         "latest_plate_solve_backend": latest_plate_solve_backend,
         "latest_plate_solve_status": latest_plate_solve_status,
+        "anomaly_flag": anomaly_flag,
+        "anomaly_reason": anomaly_reason,
         # legacy-compatible keys
         "host_hint": host_hint,
         "field_density": density,

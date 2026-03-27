@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from celestial_triage.context import build_candidate_context
-from celestial_triage.models.entities import NormalizedDetection
+from celestial_triage.models.entities import DetectorScore, NormalizedDetection
 from celestial_triage.storage.db import Database
 
 
@@ -118,3 +118,62 @@ def test_context_handles_no_plate_solve_rows(tmp_path):
     assert ctx["latest_plate_solve_backend"] is None
     assert ctx["latest_plate_solve_status"] is None
     assert ctx["latest_plate_solve_timestamp"] is None
+
+
+def test_context_flags_anomaly_with_temporal_and_signal(tmp_path):
+    db = Database(tmp_path / "ct.db")
+    db.init()
+    db.insert_detection(_det("d1", "S1", 10.0, 10.0, "no_match"))
+    db.rebuild_candidates_from_detections()
+    cid = db.get_candidate_id_for_source("S1")
+
+    det = db.get_detections_for_candidate(cid)[0]
+    db.upsert_image_asset(
+        detection_id=det["detection_id"],
+        source_id="S1",
+        broker_name="lasair_api",
+        kind="science",
+        remote_url="https://example.org/science.fits",
+    )
+    db.relink_image_assets_to_candidates()
+
+    db.insert_score(
+        DetectorScore(
+            detector_name="unknown_mover_detector",
+            candidate_id=cid,
+            score=0.85,
+            score_band="high",
+            reasons=["test"],
+            version="test",
+            created_at=datetime.now(timezone.utc),
+        )
+    )
+
+    ctx = build_candidate_context(db, cid)
+    assert ctx["anomaly_flag"] is True
+    assert "catalog" in ctx["anomaly_reason"] or "unknown_mover_detector" in ctx["anomaly_reason"]
+
+
+def test_context_not_anomaly_without_temporal_images(tmp_path):
+    db = Database(tmp_path / "ct.db")
+    db.init()
+    db.insert_detection(_det("d1", "S1", 10.0, 10.0, "no_match"))
+    db.rebuild_candidates_from_detections()
+    cid = db.get_candidate_id_for_source("S1")
+
+    # signal exists, but no temporal image means not anomaly per definition
+    db.insert_score(
+        DetectorScore(
+            detector_name="unknown_mover_detector",
+            candidate_id=cid,
+            score=0.9,
+            score_band="high",
+            reasons=["test"],
+            version="test",
+            created_at=datetime.now(timezone.utc),
+        )
+    )
+
+    ctx = build_candidate_context(db, cid)
+    assert ctx["anomaly_flag"] is False
+    assert "No broker temporal images" in ctx["anomaly_reason"]
