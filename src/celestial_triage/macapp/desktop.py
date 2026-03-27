@@ -125,8 +125,6 @@ class AnalystConsoleApp(tk.Tk):
         self._sky3d_bg_path: Path = _cache_dir() / "arcgis_world_imagery_1024x512.png"
         self._sky3d_popout: tk.Toplevel | None = None
         self._sky3d_popout_canvas: tk.Canvas | None = None
-        self._sky3d_show_imagery = tk.BooleanVar(value=True)
-        self._sky3d_point_scale = tk.DoubleVar(value=1.0)
 
         self._build_layout()
         self.log(f"[debug] file logging enabled: {self.debug_log_file}")
@@ -248,22 +246,13 @@ class AnalystConsoleApp(tk.Tk):
 
         controls = ttk.Frame(self.sky3d_frame)
         controls.grid(row=0, column=0, sticky="ew", padx=4, pady=(4, 2))
-        ttk.Button(controls, text="Reset View", command=self.reset_sky3d_view).pack(side=tk.LEFT)
-        ttk.Checkbutton(controls, text="Imagery", variable=self._sky3d_show_imagery, command=self.render_sky3d_map).pack(side=tk.LEFT, padx=6)
-        ttk.Label(controls, text="Point size").pack(side=tk.LEFT, padx=(8, 2))
-        ttk.Scale(controls, from_=0.7, to=2.0, variable=self._sky3d_point_scale, command=lambda _=None: self.render_sky3d_map(), length=110).pack(side=tk.LEFT)
-        ttk.Label(controls, text="Double-click to open in-app 3D window").pack(side=tk.LEFT, padx=8)
+        ttk.Button(controls, text="Open 3D Pop-out", command=self.open_cesium_3d_view).pack(side=tk.LEFT)
+        ttk.Label(controls, text="Overwatch-style Cesium globe with map options and zoom").pack(side=tk.LEFT, padx=8)
 
         self.sky3d_canvas = tk.Canvas(self.sky3d_frame, background="#0f1115", highlightthickness=0)
         self.sky3d_canvas.grid(row=1, column=0, sticky="nsew")
         self.sky3d_canvas.bind("<Configure>", self.on_sky3d_resize)
-        self.sky3d_canvas.bind("<ButtonPress-1>", self.on_sky3d_press)
-        self.sky3d_canvas.bind("<B1-Motion>", self.on_sky3d_drag)
-        self.sky3d_canvas.bind("<ButtonRelease-1>", self.on_sky3d_release)
-        self.sky3d_canvas.bind("<Double-Button-1>", lambda _e: self.open_sky3d_popout())
-        self.sky3d_canvas.bind("<MouseWheel>", self.on_sky3d_wheel)
-        self.sky3d_canvas.bind("<Button-4>", self.on_sky3d_wheel)
-        self.sky3d_canvas.bind("<Button-5>", self.on_sky3d_wheel)
+        self.sky3d_canvas.bind("<Double-Button-1>", lambda _e: self.open_cesium_3d_view())
 
     def _build_right(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
@@ -768,40 +757,8 @@ class AnalystConsoleApp(tk.Tk):
         canvas.bind("<Button-5>", self.on_sky3d_wheel)
 
     def open_sky3d_popout(self) -> None:
-        if self._sky3d_popout is not None and self._sky3d_popout.winfo_exists():
-            self._sky3d_popout.lift()
-            self._sky3d_popout.focus_force()
-            return
-
-        win = tk.Toplevel(self)
-        win.title("Directional 3D Sky View")
-        win.geometry("1100x820")
-        win.columnconfigure(0, weight=1)
-        win.rowconfigure(1, weight=1)
-
-        bar = ttk.Frame(win)
-        bar.grid(row=0, column=0, sticky="ew", padx=6, pady=4)
-        ttk.Button(bar, text="Reset View", command=self.reset_sky3d_view).pack(side=tk.LEFT)
-        ttk.Checkbutton(bar, text="Imagery", variable=self._sky3d_show_imagery, command=self.render_sky3d_map).pack(side=tk.LEFT, padx=6)
-        ttk.Label(bar, text="Point size").pack(side=tk.LEFT, padx=(8, 2))
-        ttk.Scale(bar, from_=0.7, to=2.0, variable=self._sky3d_point_scale, command=lambda _=None: self.render_sky3d_map(), length=140).pack(side=tk.LEFT)
-        ttk.Label(bar, text="Drag=orbit, Shift+Drag=pan, Wheel=zoom").pack(side=tk.LEFT, padx=8)
-
-        c = tk.Canvas(win, background="#0f1115", highlightthickness=0)
-        c.grid(row=1, column=0, sticky="nsew")
-        self._bind_sky3d_controls(c)
-
-        self._sky3d_popout = win
-        self._sky3d_popout_canvas = c
-
-        def _close_popout() -> None:
-            self._sky3d_popout_canvas = None
-            self._sky3d_popout = None
-            win.destroy()
-            self.render_sky3d_map()
-
-        win.protocol("WM_DELETE_WINDOW", _close_popout)
-        self.render_sky3d_map()
+        # Legacy hook retained: route to Cesium pop-out.
+        self.open_cesium_3d_view()
 
     def open_cesium_3d_view(self) -> None:
         """Open a true WebGL globe (Cesium), matching Overwatch's 3D behavior."""
@@ -832,49 +789,100 @@ class AnalystConsoleApp(tk.Tk):
         selected = self.selected_candidate_id or ""
         payload = json.dumps(data)
         color_map = json.dumps(colors)
-        html = f"""<!doctype html>
+        selected_json = json.dumps(selected)
+        html_template = """<!doctype html>
 <html>
 <head>
   <meta charset='utf-8' />
   <title>Celestial Triage — Cesium 3D</title>
   <script src='https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Cesium.js'></script>
   <link href='https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Widgets/widgets.css' rel='stylesheet'>
-  <style>html,body,#c{{width:100%;height:100%;margin:0;background:#0f1115;}} .lbl{{font:12px sans-serif;color:#ddd;position:absolute;left:10px;top:8px;z-index:5;}}</style>
+  <style>
+    html,body,#c{width:100%;height:100%;margin:0;background:#0f1115;}
+    .toolbar{position:absolute;left:10px;top:8px;z-index:20;display:flex;gap:8px;align-items:center;background:rgba(12,14,20,.76);padding:8px 10px;border-radius:8px;color:#ddd;font:12px sans-serif}
+    .toolbar select,.toolbar input,.toolbar button{background:#1b1f27;color:#ddd;border:1px solid #333;border-radius:6px;padding:3px 6px}
+  </style>
 </head>
 <body>
-  <div class='lbl'>Directional-only globe (no distance assumptions)</div>
+  <div class='toolbar'>
+    <span>Directional-only globe (no distance assumptions)</span>
+    <label>Basemap
+      <select id='basemap'>
+        <option value='imagery' selected>ArcGIS World Imagery</option>
+        <option value='streets'>ArcGIS World Street Map</option>
+        <option value='none'>None</option>
+      </select>
+    </label>
+    <label>Point size <input id='ps' type='range' min='4' max='20' step='1' value='8'></label>
+    <button id='reset'>Reset View</button>
+  </div>
   <div id='c'></div>
   <script>
-    const pts = {payload};
-    const colors = {color_map};
-    const selected = {json.dumps(selected)};
-    const v = new Cesium.Viewer('c', {{
+    const pts = __PAYLOAD__;
+    const colors = __COLORS__;
+    const selected = __SELECTED__;
+    const imageryProviders = {
+      imagery: () => new Cesium.ArcGisMapServerImageryProvider({url:'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer'}),
+      streets: () => new Cesium.ArcGisMapServerImageryProvider({url:'https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer'}),
+      none: () => null,
+    };
+    const v = new Cesium.Viewer('c', {
       terrainProvider: new Cesium.EllipsoidTerrainProvider(),
-      imageryProvider: new Cesium.ArcGisMapServerImageryProvider({{url:'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer'}}),
-      timeline:false, animation:false, baseLayerPicker:false, geocoder:false, sceneModePicker:false
-    }});
+      imageryProvider: imageryProviders.imagery(),
+      timeline:false, animation:false, baseLayerPicker:false, geocoder:false,
+      sceneModePicker:true, navigationHelpButton:true, homeButton:true
+    });
     v.scene.globe.enableLighting = false;
     v.scene.skyAtmosphere.show = false;
     v.scene.globe.depthTestAgainstTerrain = false;
 
-    for (const p of pts) {{
-      const color = Cesium.Color.fromCssColorString(colors[p.priority] || '#8c8c8c');
-      const isSel = selected && p.candidate_id === selected;
-      v.entities.add({{
-        id: p.candidate_id,
-        position: Cesium.Cartesian3.fromDegrees(p.lon, p.lat, 0),
-        point: {{ pixelSize: isSel ? 12 : 8, color: color, outlineColor: Cesium.Color.WHITE, outlineWidth: isSel ? 2 : 0 }},
-        label: isSel ? {{ text: p.candidate_id, font:'12px sans-serif', fillColor: Cesium.Color.WHITE, pixelOffset: new Cesium.Cartesian2(10, -12) }} : undefined,
-      }});
-    }}
+    const entities = [];
+    const ps = document.getElementById('ps');
+    function rebuildEntities() {
+      const base = Number(ps.value || 8);
+      v.entities.removeAll();
+      entities.length = 0;
+      for (const p of pts) {
+        const color = Cesium.Color.fromCssColorString(colors[p.priority] || '#8c8c8c');
+        const isSel = selected && p.candidate_id === selected;
+        const e = v.entities.add({
+          id: p.candidate_id,
+          position: Cesium.Cartesian3.fromDegrees(p.lon, p.lat, 0),
+          point: { pixelSize: isSel ? base + 4 : base, color: color, outlineColor: Cesium.Color.WHITE, outlineWidth: isSel ? 2 : 0 },
+          label: isSel ? { text: p.candidate_id, font:'12px sans-serif', fillColor: Cesium.Color.WHITE, pixelOffset: new Cesium.Cartesian2(10, -12) } : undefined,
+        });
+        entities.push(e);
+      }
+    }
 
-    if (pts.length) {{
-      const first = pts.find(p => p.candidate_id === selected) || pts[0];
-      v.camera.flyTo({{ destination: Cesium.Cartesian3.fromDegrees(first.lon, first.lat, 16000000) }});
-    }}
+    function flyDefault() {
+      if (pts.length) {
+        const first = pts.find(p => p.candidate_id === selected) || pts[0];
+        v.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(first.lon, first.lat, 16000000) });
+      }
+    }
+
+    rebuildEntities();
+    flyDefault();
+
+    ps.addEventListener('input', rebuildEntities);
+    document.getElementById('reset').addEventListener('click', flyDefault);
+
+    document.getElementById('basemap').addEventListener('change', (ev) => {
+      const key = ev.target.value;
+      v.imageryLayers.removeAll();
+      const providerFactory = imageryProviders[key] || imageryProviders.imagery;
+      const provider = providerFactory();
+      if (provider) v.imageryLayers.addImageryProvider(provider);
+    });
   </script>
 </body>
 </html>"""
+        html = (
+            html_template.replace("__PAYLOAD__", payload)
+            .replace("__COLORS__", color_map)
+            .replace("__SELECTED__", selected_json)
+        )
         out = Path(tempfile.gettempdir()) / "celestial_triage_cesium_3d.html"
         out.write_text(html, encoding="utf-8")
         webbrowser.open(out.as_uri())
@@ -952,129 +960,26 @@ class AnalystConsoleApp(tk.Tk):
                 self.log(f"[sky3d] ArcGIS imagery load error: {exc}")
                 self._sky3d_bg_img = None
     def render_sky3d_map(self) -> None:
-        c = self._sky3d_popout_canvas if (self._sky3d_popout_canvas is not None and self._sky3d_popout_canvas.winfo_exists()) else self.sky3d_canvas
+        # Directional 3D now uses Overwatch-style Cesium pop-out for accurate globe rendering.
+        c = self.sky3d_canvas
         c.delete("all")
-
-        # If pop-out is active, leave a hint in embedded panel.
-        if c is not self.sky3d_canvas:
-            self.sky3d_canvas.delete("all")
-            self.sky3d_canvas.create_text(12, 12, anchor="nw", fill="#bbb", text="Directional 3D is open in pop-out window")
-
-        self._ensure_sky3d_background()
-
-        points = prepare_candidate_sky_points(self.db)
-        self._sky3d_points = points
-        if not points:
-            c.create_text(12, 12, anchor="nw", fill="#ddd", text="No plottable candidates with RA/DEC")
-            return
-
         width = max(320, c.winfo_width() or 320)
         height = max(240, c.winfo_height() or 240)
-        cx = (width / 2.0) + self._sky3d_pan_x
-        cy = (height / 2.0) + self._sky3d_pan_y
-        radius = min(width, height) * 0.34 * self._sky3d_zoom
-
-        sin_yaw = math.sin(self._sky3d_yaw)
-        cos_yaw = math.cos(self._sky3d_yaw)
-        sin_pitch = math.sin(self._sky3d_pitch)
-        cos_pitch = math.cos(self._sky3d_pitch)
-
-        # ArcGIS World Imagery wrapped onto visible hemisphere (directional texture only).
-        if bool(self._sky3d_show_imagery.get()) and self._sky3d_bg_img is not None and radius > 5:
-            tex = self._sky3d_bg_img
-            tw, th = tex.size
-            step = 4  # degrees
-            for lat_deg in range(-88, 89, step):
-                lat = math.radians(float(lat_deg))
-                cos_lat = math.cos(lat)
-                sin_lat = math.sin(lat)
-                for lon_deg in range(-180, 181, step):
-                    lon = math.radians(float(lon_deg))
-
-                    x = cos_lat * math.cos(lon)
-                    y = cos_lat * math.sin(lon)
-                    z = sin_lat
-
-                    x1 = x * cos_yaw - y * sin_yaw
-                    y1 = x * sin_yaw + y * cos_yaw
-                    z1 = z
-
-                    x2 = x1
-                    y2 = y1 * cos_pitch - z1 * sin_pitch
-                    z2 = y1 * sin_pitch + z1 * cos_pitch
-
-                    if x2 < 0:  # far hemisphere hidden in orthographic view (viewer along +x)
-                        continue
-
-                    sx = cx + (y2 * radius)
-                    sy = cy - (z2 * radius)
-
-                    u = (lon_deg + 180.0) / 360.0
-                    v = (90.0 - lat_deg) / 180.0
-                    tx = int(max(0, min(tw - 1, round(u * (tw - 1)))))
-                    ty = int(max(0, min(th - 1, round(v * (th - 1)))))
-                    r, g, b = tex.getpixel((tx, ty))
-                    color = f"#{r:02x}{g:02x}{b:02x}"
-                    c.create_rectangle(sx, sy, sx + 2, sy + 2, outline=color, fill=color)
-
-        # Sphere guide
-        c.create_oval(cx - radius, cy - radius, cx + radius, cy + radius, outline="#2b2f36")
-
-        draw_items: list[tuple[float, dict[str, Any], float, float]] = []
-        for p in points:
-            ra_deg = float(p["ra"])
-            dec_deg = float(p["dec"])
-            ra = math.radians(ra_deg)
-            dec = math.radians(dec_deg)
-
-            # Directional-only unit sphere mapping.
-            x = math.cos(dec) * math.cos(ra)
-            y = math.cos(dec) * math.sin(ra)
-            z = math.sin(dec)
-
-            # Orbit camera rotation (yaw about z-ish via x/y, pitch about x).
-            x1 = x * cos_yaw - y * sin_yaw
-            y1 = x * sin_yaw + y * cos_yaw
-            z1 = z
-
-            x2 = x1
-            y2 = y1 * cos_pitch - z1 * sin_pitch
-            z2 = y1 * sin_pitch + z1 * cos_pitch
-
-            # Viewer axis is +x; screen plane is y/z.
-            sx = cx + (y2 * radius)
-            sy = cy - (z2 * radius)
-            p["_px"] = sx
-            p["_py"] = sy
-            draw_items.append((x2, p, sx, sy))
-
-        # Draw far hemisphere first.
-        draw_items.sort(key=lambda t: t[0])
-        point_scale = float(self._sky3d_point_scale.get() or 1.0)
-        for depth, p, x, y in draw_items:
-            pri = str(p.get("followup_priority", "low"))
-            color = self._priority_color(pri)
-            base_r = 5 if pri in ("urgent", "high") else 4
-            r = max(2, int(round(base_r * point_scale)))
-            # Back hemisphere dimming for depth cue only.
-            fill = color if depth >= 0 else "#4a4a4a"
-            outline = "#ffffff" if p.get("candidate_id") == self.selected_candidate_id else ""
-            c.create_oval(x - r, y - r, x + r, y + r, fill=fill, outline=outline)
-
         c.create_text(
-            10,
-            8,
-            anchor="nw",
-            fill="#bbb",
-            text="Directional 3D (unit sphere): no distance assumptions",
+            width / 2,
+            height / 2 - 20,
+            anchor="center",
+            fill="#ddd",
+            text="Directional 3D uses Overwatch-style Cesium pop-out",
+            font=("SF Pro Text", 12, "bold"),
         )
-
         c.create_text(
-            10,
-            height - 8,
-            anchor="sw",
-            fill="#888",
-            text=f"yaw={self._sky3d_yaw:.2f} pitch={self._sky3d_pitch:.2f} zoom={self._sky3d_zoom:.2f}",
+            width / 2,
+            height / 2 + 6,
+            anchor="center",
+            fill="#aaa",
+            text="Click 'Open 3D Pop-out' (or double-click here) for full globe + map options + zoom.",
+            font=("SF Pro Text", 10),
         )
 
     def refresh_detail(self) -> None:
