@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import sqlite3
 import sys
@@ -95,10 +96,20 @@ class AnalystConsoleApp(tk.Tk):
         self._current_images: list[dict] = []
         self._image_photos: list[tk.PhotoImage] = []
         self._sky_points: list[dict] = []
+        self._sky3d_points: list[dict] = []
         self._overlay_ra: float | None = None
         self._overlay_dec: float | None = None
         self._overlay_track_offsets: list[tuple[float, float]] = []
         self.show_motion_overlay = tk.BooleanVar(value=False)
+
+        # Directional 3D sky view camera state (unit-sphere only; no distance model).
+        self._sky3d_yaw = 0.0
+        self._sky3d_pitch = 0.0
+        self._sky3d_zoom = 1.0
+        self._sky3d_pan_x = 0.0
+        self._sky3d_pan_y = 0.0
+        self._sky3d_drag_start: tuple[float, float] | None = None
+        self._sky3d_drag_moved = False
 
         self._build_layout()
         self.log(f"[debug] file logging enabled: {self.debug_log_file}")
@@ -202,12 +213,36 @@ class AnalystConsoleApp(tk.Tk):
         self.context_scroll.grid(row=0, column=1, sticky="ns")
         self.context_text.configure(yscrollcommand=self.context_scroll.set)
 
-        self.sky_map_frame = ttk.LabelFrame(parent, text="Sky Map (RA/DEC)")
-        self.sky_map_frame.grid(row=3, column=0, sticky="nsew", pady=6)
+        self.sky_view_tabs = ttk.Notebook(parent)
+        self.sky_view_tabs.grid(row=3, column=0, sticky="nsew", pady=6)
+
+        self.sky_map_frame = ttk.Frame(self.sky_view_tabs)
+        self.sky3d_frame = ttk.Frame(self.sky_view_tabs)
+        self.sky_view_tabs.add(self.sky_map_frame, text="Sky Map 2D")
+        self.sky_view_tabs.add(self.sky3d_frame, text="Directional 3D")
+
         self.sky_map_canvas = tk.Canvas(self.sky_map_frame, background="#0f1115", highlightthickness=0)
         self.sky_map_canvas.pack(fill="both", expand=True)
         self.sky_map_canvas.bind("<Button-1>", self.on_sky_map_click)
         self.sky_map_canvas.bind("<Configure>", self.on_sky_map_resize)
+
+        self.sky3d_frame.columnconfigure(0, weight=1)
+        self.sky3d_frame.rowconfigure(1, weight=1)
+
+        controls = ttk.Frame(self.sky3d_frame)
+        controls.grid(row=0, column=0, sticky="ew", padx=4, pady=(4, 2))
+        ttk.Button(controls, text="Reset View", command=self.reset_sky3d_view).pack(side=tk.LEFT)
+        ttk.Label(controls, text="Drag=orbit, Shift+Drag=pan, Wheel=zoom").pack(side=tk.LEFT, padx=8)
+
+        self.sky3d_canvas = tk.Canvas(self.sky3d_frame, background="#0f1115", highlightthickness=0)
+        self.sky3d_canvas.grid(row=1, column=0, sticky="nsew")
+        self.sky3d_canvas.bind("<Configure>", self.on_sky3d_resize)
+        self.sky3d_canvas.bind("<ButtonPress-1>", self.on_sky3d_press)
+        self.sky3d_canvas.bind("<B1-Motion>", self.on_sky3d_drag)
+        self.sky3d_canvas.bind("<ButtonRelease-1>", self.on_sky3d_release)
+        self.sky3d_canvas.bind("<MouseWheel>", self.on_sky3d_wheel)
+        self.sky3d_canvas.bind("<Button-4>", self.on_sky3d_wheel)
+        self.sky3d_canvas.bind("<Button-5>", self.on_sky3d_wheel)
 
     def _build_right(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
@@ -497,6 +532,7 @@ class AnalystConsoleApp(tk.Tk):
         self.db.init()
         self.load_candidates()
         self.render_sky_map()
+        self.render_sky3d_map()
         self.refresh_detail()
     
     def open_plate_solve_dialog(self) -> None:
@@ -593,9 +629,11 @@ class AnalystConsoleApp(tk.Tk):
         self.review_candidate.set(self.selected_candidate_id)
         self.refresh_detail()
         self.render_sky_map()
+        self.render_sky3d_map()
 
     def on_sky_map_resize(self, event) -> None:
         self.render_sky_map()
+
 
     def _priority_color(self, p: str) -> str:
         return {
@@ -666,11 +704,7 @@ class AnalystConsoleApp(tk.Tk):
             text="red=urgent, orange=high, blue=medium, gray=low",
         )
 
-    def on_sky_map_click(self, event) -> None:
-        pt = nearest_point(self._sky_points, float(event.x), float(event.y), max_px_dist=12.0)
-        if not pt:
-            return
-        cid = str(pt["candidate_id"])
+    def _select_candidate_from_sky(self, cid: str) -> None:
         self.selected_candidate_id = cid
         self.review_candidate.set(cid)
 
@@ -684,6 +718,147 @@ class AnalystConsoleApp(tk.Tk):
 
         self.refresh_detail()
         self.render_sky_map()
+        self.render_sky3d_map()
+
+    def on_sky_map_click(self, event) -> None:
+        pt = nearest_point(self._sky_points, float(event.x), float(event.y), max_px_dist=12.0)
+        if not pt:
+            return
+        self._select_candidate_from_sky(str(pt["candidate_id"]))
+
+    def reset_sky3d_view(self) -> None:
+        self._sky3d_yaw = 0.0
+        self._sky3d_pitch = 0.0
+        self._sky3d_zoom = 1.0
+        self._sky3d_pan_x = 0.0
+        self._sky3d_pan_y = 0.0
+        self.render_sky3d_map()
+
+    def on_sky3d_resize(self, _event=None) -> None:
+        self.render_sky3d_map()
+
+    def on_sky3d_press(self, event) -> None:
+        self._sky3d_drag_start = (float(event.x), float(event.y))
+        self._sky3d_drag_moved = False
+
+    def on_sky3d_drag(self, event) -> None:
+        if not self._sky3d_drag_start:
+            return
+        x0, y0 = self._sky3d_drag_start
+        dx = float(event.x) - x0
+        dy = float(event.y) - y0
+        if abs(dx) + abs(dy) > 2:
+            self._sky3d_drag_moved = True
+
+        if event.state & 0x0001:  # Shift for pan
+            self._sky3d_pan_x += dx
+            self._sky3d_pan_y += dy
+        else:
+            self._sky3d_yaw += dx * 0.006
+            self._sky3d_pitch += dy * 0.006
+            self._sky3d_pitch = max(-1.4, min(1.4, self._sky3d_pitch))
+
+        self._sky3d_drag_start = (float(event.x), float(event.y))
+        self.render_sky3d_map()
+
+    def on_sky3d_release(self, event) -> None:
+        if self._sky3d_drag_start and not self._sky3d_drag_moved:
+            pt = nearest_point(self._sky3d_points, float(event.x), float(event.y), max_px_dist=12.0)
+            if pt:
+                self._select_candidate_from_sky(str(pt["candidate_id"]))
+        self._sky3d_drag_start = None
+
+    def on_sky3d_wheel(self, event) -> None:
+        delta = 0
+        if hasattr(event, "delta") and event.delta:
+            delta = 1 if event.delta > 0 else -1
+        elif getattr(event, "num", None) == 4:
+            delta = 1
+        elif getattr(event, "num", None) == 5:
+            delta = -1
+        if delta == 0:
+            return
+        factor = 1.1 if delta > 0 else 0.9
+        self._sky3d_zoom = max(0.4, min(3.5, self._sky3d_zoom * factor))
+        self.render_sky3d_map()
+
+    def render_sky3d_map(self) -> None:
+        c = self.sky3d_canvas
+        c.delete("all")
+
+        points = prepare_candidate_sky_points(self.db)
+        self._sky3d_points = points
+        if not points:
+            c.create_text(12, 12, anchor="nw", fill="#ddd", text="No plottable candidates with RA/DEC")
+            return
+
+        width = max(320, c.winfo_width() or 320)
+        height = max(240, c.winfo_height() or 240)
+        cx = (width / 2.0) + self._sky3d_pan_x
+        cy = (height / 2.0) + self._sky3d_pan_y
+        radius = min(width, height) * 0.34 * self._sky3d_zoom
+
+        # Sphere guide
+        c.create_oval(cx - radius, cy - radius, cx + radius, cy + radius, outline="#2b2f36")
+
+        sin_yaw = math.sin(self._sky3d_yaw)
+        cos_yaw = math.cos(self._sky3d_yaw)
+        sin_pitch = math.sin(self._sky3d_pitch)
+        cos_pitch = math.cos(self._sky3d_pitch)
+
+        draw_items: list[tuple[float, dict[str, Any], float, float]] = []
+        for p in points:
+            ra_deg = float(p["ra"])
+            dec_deg = float(p["dec"])
+            ra = math.radians(ra_deg)
+            dec = math.radians(dec_deg)
+
+            # Directional-only unit sphere mapping.
+            x = math.cos(dec) * math.cos(ra)
+            y = math.cos(dec) * math.sin(ra)
+            z = math.sin(dec)
+
+            # Orbit camera rotation (yaw about z-ish via x/y, pitch about x).
+            x1 = x * cos_yaw - y * sin_yaw
+            y1 = x * sin_yaw + y * cos_yaw
+            z1 = z
+
+            x2 = x1
+            y2 = y1 * cos_pitch - z1 * sin_pitch
+            z2 = y1 * sin_pitch + z1 * cos_pitch
+
+            sx = cx + (x2 * radius)
+            sy = cy - (y2 * radius)
+            p["_px"] = sx
+            p["_py"] = sy
+            draw_items.append((z2, p, sx, sy))
+
+        # Draw back hemisphere first.
+        draw_items.sort(key=lambda t: t[0])
+        for depth, p, x, y in draw_items:
+            pri = str(p.get("followup_priority", "low"))
+            color = self._priority_color(pri)
+            r = 5 if pri in ("urgent", "high") else 4
+            # Back hemisphere dimming for depth cue only.
+            fill = color if depth >= 0 else "#4a4a4a"
+            outline = "#ffffff" if p.get("candidate_id") == self.selected_candidate_id else ""
+            c.create_oval(x - r, y - r, x + r, y + r, fill=fill, outline=outline)
+
+        c.create_text(
+            10,
+            8,
+            anchor="nw",
+            fill="#bbb",
+            text="Directional 3D (unit sphere): no distance assumptions",
+        )
+
+        c.create_text(
+            10,
+            height - 8,
+            anchor="sw",
+            fill="#888",
+            text=f"yaw={self._sky3d_yaw:.2f} pitch={self._sky3d_pitch:.2f} zoom={self._sky3d_zoom:.2f}",
+        )
 
     def refresh_detail(self) -> None:
         self.detail_text.delete("1.0", tk.END)
@@ -692,6 +867,7 @@ class AnalystConsoleApp(tk.Tk):
             child.destroy()
         self._image_photos = []
         self._sky_points = []
+        self._sky3d_points = []
         self._overlay_ra = None
         self._overlay_dec = None
         self._overlay_track_offsets = []

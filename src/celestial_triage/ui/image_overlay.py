@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from math import cos, radians, sqrt
 from typing import Any
 
@@ -12,11 +12,14 @@ def _to_float(v: Any) -> float | None:
         return None
 
 
-def _to_dt(v: Any) -> datetime:
+def _to_ts(v: Any) -> float:
     try:
-        return datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
     except Exception:
-        return datetime.min
+        return float("-inf")
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp()
 
 
 def format_radec_overlay(ra: Any, dec: Any) -> str | None:
@@ -44,13 +47,13 @@ def build_track_offsets(
     if cra is None or cdec is None:
         return []
 
-    rows: list[tuple[datetime, float, float]] = []
+    rows: list[tuple[float, float, float]] = []
     for d in detections:
         ra = _to_float(d.get("ra"))
         dec = _to_float(d.get("dec"))
         if ra is None or dec is None:
             continue
-        rows.append((_to_dt(d.get("timestamp")), ra, dec))
+        rows.append((_to_ts(d.get("timestamp")), ra, dec))
 
     if len(rows) < 2:
         return []

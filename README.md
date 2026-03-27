@@ -254,7 +254,7 @@ dist/CelestialTriage.app
 ### UI layout
 
 - **Left pane:** candidate queue + review filter + **Solve Image... button**
-- **Center pane:** candidate detail, detector scores, interpretation/conflict summary, trajectory summary, timeline/provenance, follow-up priority
+- **Center pane:** candidate detail, detector scores, interpretation/conflict summary, trajectory summary, timeline/provenance, follow-up priority, Sky Map 2D + Directional 3D tabs
 - **Right pane:** image panel + command/action tabs + execution logs
 
 ### Image-first workflow (Galileo-style)
@@ -403,16 +403,30 @@ The selected candidate includes a **Context Panel** optimized for quick analyst 
 
 ### Sky map panel (Mac app)
 
-The Mac app now includes a **Sky Map (RA/DEC)** panel that:
+The Mac app includes both:
+- **Sky Map 2D (RA/DEC)**
+- **Directional 3D** (unit celestial sphere)
+
+2D view:
 - plots all plottable candidates (RA on x-axis, DEC on y-axis)
 - colors points by follow-up priority (urgent/high/medium/low)
 - emphasizes selected candidate point
 - supports click-to-select via nearest-point selection
 - syncs map selection back into candidate detail/queue context
 
+Directional 3D view (Phase 1):
+- maps each candidate direction onto a **unit sphere** using only RA/DEC
+- coordinate mapping:
+  - `x = cos(dec) * cos(ra)`
+  - `y = cos(dec) * sin(ra)`
+  - `z = sin(dec)`
+- supports orbit/rotate, pan, and zoom camera controls
+- supports click-to-select and sync back to detail/image/context panels
+- **no distance assumptions** (no fake depth, no magnitude-based distance)
+
 Limitations (first pass):
-- simple 2D RA/DEC projection (no advanced sky projection/wrap handling)
-- no pan/zoom yet
+- directional-only geometry; no radial distance model
+- simple screen projection/orbit controls (not a full astrometry viewer)
 - candidates without usable coordinates are skipped
 
 ### Mac app image panel behavior
@@ -420,11 +434,11 @@ Limitations (first pass):
 The Mac app image panel:
 - auto-renders **all available images** for the selected candidate
 - keeps a stable display order:
-  1) science
-  2) reference
-  3) difference
-  4) survey_context_panstarrs
-  5) survey_context_skyview
+  1) survey_context_panstarrs
+  2) survey_context_skyview
+  3) science
+  4) reference
+  5) difference
 - collects and displays broker + Pan-STARRS + SkyView when available
 - uses a vertical scrollbar for multi-image candidates
 - prefers local preview PNGs for in-app display
