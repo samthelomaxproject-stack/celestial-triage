@@ -429,6 +429,27 @@ Limitations (first pass):
 - simple screen projection/orbit controls (not a full astrometry viewer)
 - candidates without usable coordinates are skipped
 
+### Observability (Phase 1)
+
+The app now supports location-aware observability checks for each candidate:
+
+- Observer location settings (manual): latitude, longitude, optional elevation
+- Real-time Alt/Az conversion from candidate RA/DEC + observer location + current UTC
+- Visibility state: visible now / low horizon / below horizon
+- Telescope viewing settings:
+  - pointing mode: RA/DEC or Alt/Az
+  - field of view (deg)
+  - minimum observing altitude threshold
+- Per-candidate FOV check:
+  - angular separation from telescope center
+  - in-FOV yes/no
+
+Observability appears in the **Observability** panel in Candidate Detail and can be used to filter the queue (`Observable only`).
+
+Notes:
+- This is line-of-sight observability from Earth only.
+- No distance estimation or simulated depth is used.
+
 ### Mac app image panel behavior
 
 The Mac app image panel:

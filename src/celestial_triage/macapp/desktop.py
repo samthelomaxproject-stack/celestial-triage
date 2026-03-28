@@ -28,6 +28,7 @@ except Exception as exc:  # pragma: no cover
     print(f"Details: {exc}")
     sys.exit(1)
 
+from celestial_triage.astro.observability import ObserverLocation, TelescopePointing, evaluate_observability
 from celestial_triage.config import DB_PATH
 from celestial_triage.context import build_candidate_context
 from celestial_triage.macapp.runner import SafeCliRunner
@@ -143,6 +144,16 @@ class AnalystConsoleApp(tk.Tk):
         payload = {
             "lasair_lsst_api_token": self.lasair_lsst_token_var.get().strip(),
             "lasair_ztf_api_token": self.lasair_ztf_token_var.get().strip(),
+            "observer_latitude": self.observer_lat_var.get().strip() if hasattr(self, "observer_lat_var") else "",
+            "observer_longitude": self.observer_lon_var.get().strip() if hasattr(self, "observer_lon_var") else "",
+            "observer_elevation_m": self.observer_elev_var.get().strip() if hasattr(self, "observer_elev_var") else "0",
+            "telescope_mode": self.telescope_mode_var.get().strip() if hasattr(self, "telescope_mode_var") else "radec",
+            "telescope_ra_deg": self.telescope_ra_var.get().strip() if hasattr(self, "telescope_ra_var") else "",
+            "telescope_dec_deg": self.telescope_dec_var.get().strip() if hasattr(self, "telescope_dec_var") else "",
+            "telescope_alt_deg": self.telescope_alt_var.get().strip() if hasattr(self, "telescope_alt_var") else "",
+            "telescope_az_deg": self.telescope_az_var.get().strip() if hasattr(self, "telescope_az_var") else "",
+            "telescope_fov_deg": self.telescope_fov_var.get().strip() if hasattr(self, "telescope_fov_var") else "2.0",
+            "min_observing_altitude_deg": self.min_alt_var.get().strip() if hasattr(self, "min_alt_var") else "20.0",
         }
         self.settings_file.parent.mkdir(parents=True, exist_ok=True)
         self.settings_file.write_text(json.dumps(payload, indent=2))
@@ -191,6 +202,8 @@ class AnalystConsoleApp(tk.Tk):
             width=14,
             state="readonly",
         ).pack(side=tk.LEFT, padx=6)
+        self.observable_only = tk.BooleanVar(value=False)
+        ttk.Checkbutton(filter_row, text="Observable only", variable=self.observable_only, command=self.load_candidates).pack(side=tk.LEFT, padx=6)
         ttk.Button(filter_row, text="Refresh", command=self.refresh_all).pack(side=tk.LEFT)
         ttk.Button(filter_row, text="Solve Image...", command=self.open_plate_solve_dialog).pack(side=tk.LEFT, padx=4)
 
@@ -203,6 +216,7 @@ class AnalystConsoleApp(tk.Tk):
         parent.rowconfigure(1, weight=3)
         parent.rowconfigure(2, weight=1)
         parent.rowconfigure(3, weight=2)
+        parent.rowconfigure(4, weight=1)
 
         ttk.Label(parent, text="Candidate Detail", font=("SF Pro Text", 14, "bold")).grid(
             row=0, column=0, sticky="w"
@@ -255,6 +269,11 @@ class AnalystConsoleApp(tk.Tk):
         self.sky3d_canvas.grid(row=1, column=0, sticky="nsew")
         self.sky3d_canvas.bind("<Configure>", self.on_sky3d_resize)
         self.sky3d_canvas.bind("<Double-Button-1>", lambda _e: self.open_cesium_3d_view())
+
+        self.observability_frame = ttk.LabelFrame(parent, text="Observability")
+        self.observability_frame.grid(row=4, column=0, sticky="nsew", pady=6)
+        self.observability_text = tk.Text(self.observability_frame, height=6, wrap="word")
+        self.observability_text.pack(fill="both", expand=True)
 
     def _build_right(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
@@ -442,20 +461,55 @@ class AnalystConsoleApp(tk.Tk):
         f = self.tab_settings
         self.lasair_lsst_token_var = tk.StringVar(value=self.settings.get("lasair_lsst_api_token", ""))
         self.lasair_ztf_token_var = tk.StringVar(value=self.settings.get("lasair_ztf_api_token", ""))
+
+        self.observer_lat_var = tk.StringVar(value=str(self.settings.get("observer_latitude", "")))
+        self.observer_lon_var = tk.StringVar(value=str(self.settings.get("observer_longitude", "")))
+        self.observer_elev_var = tk.StringVar(value=str(self.settings.get("observer_elevation_m", "0")))
+
+        self.telescope_mode_var = tk.StringVar(value=str(self.settings.get("telescope_mode", "radec")))
+        self.telescope_ra_var = tk.StringVar(value=str(self.settings.get("telescope_ra_deg", "")))
+        self.telescope_dec_var = tk.StringVar(value=str(self.settings.get("telescope_dec_deg", "")))
+        self.telescope_alt_var = tk.StringVar(value=str(self.settings.get("telescope_alt_deg", "")))
+        self.telescope_az_var = tk.StringVar(value=str(self.settings.get("telescope_az_deg", "")))
+        self.telescope_fov_var = tk.StringVar(value=str(self.settings.get("telescope_fov_deg", "2.0")))
+        self.min_alt_var = tk.StringVar(value=str(self.settings.get("min_observing_altitude_deg", "20.0")))
+
         ttk.Label(f, text="Lasair LSST API token").grid(row=0, column=0, sticky="w")
         ttk.Entry(f, textvariable=self.lasair_lsst_token_var, show="*", width=42).grid(row=0, column=1, sticky="ew")
 
         ttk.Label(f, text="Lasair ZTF API token").grid(row=1, column=0, sticky="w")
         ttk.Entry(f, textvariable=self.lasair_ztf_token_var, show="*", width=42).grid(row=1, column=1, sticky="ew")
 
-        ttk.Label(f, text="(LSST and ZTF use separate tokens)").grid(row=2, column=0, columnspan=2, sticky="w")
+        ttk.Separator(f, orient="horizontal").grid(row=2, column=0, columnspan=2, sticky="ew", pady=6)
+        ttk.Label(f, text="Observer latitude (deg)").grid(row=3, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.observer_lat_var, width=20).grid(row=3, column=1, sticky="w")
+        ttk.Label(f, text="Observer longitude (deg)").grid(row=4, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.observer_lon_var, width=20).grid(row=4, column=1, sticky="w")
+        ttk.Label(f, text="Observer elevation (m)").grid(row=5, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.observer_elev_var, width=20).grid(row=5, column=1, sticky="w")
 
-        ttk.Button(f, text="Save Settings", command=self._save_settings).grid(row=3, column=0, columnspan=2, sticky="ew", pady=4)
+        ttk.Separator(f, orient="horizontal").grid(row=6, column=0, columnspan=2, sticky="ew", pady=6)
+        ttk.Label(f, text="Telescope mode").grid(row=7, column=0, sticky="w")
+        ttk.Combobox(f, textvariable=self.telescope_mode_var, values=["radec", "altaz"], width=12, state="readonly").grid(row=7, column=1, sticky="w")
+        ttk.Label(f, text="Telescope RA (deg)").grid(row=8, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.telescope_ra_var, width=20).grid(row=8, column=1, sticky="w")
+        ttk.Label(f, text="Telescope DEC (deg)").grid(row=9, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.telescope_dec_var, width=20).grid(row=9, column=1, sticky="w")
+        ttk.Label(f, text="Telescope Alt (deg)").grid(row=10, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.telescope_alt_var, width=20).grid(row=10, column=1, sticky="w")
+        ttk.Label(f, text="Telescope Az (deg)").grid(row=11, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.telescope_az_var, width=20).grid(row=11, column=1, sticky="w")
+        ttk.Label(f, text="FOV (deg)").grid(row=12, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.telescope_fov_var, width=20).grid(row=12, column=1, sticky="w")
+        ttk.Label(f, text="Min observing altitude (deg)").grid(row=13, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.min_alt_var, width=20).grid(row=13, column=1, sticky="w")
+
+        ttk.Button(f, text="Save Settings", command=self._save_settings).grid(row=14, column=0, columnspan=2, sticky="ew", pady=6)
         ttk.Label(
             f,
             text=f"Stored at: {self.settings_file}",
             foreground="#666",
-        ).grid(row=4, column=0, columnspan=2, sticky="w")
+        ).grid(row=15, column=0, columnspan=2, sticky="w")
 
         self._update_ingest_token_warning()
 
@@ -604,17 +658,69 @@ class AnalystConsoleApp(tk.Tk):
             )
     
 
+    def _observer_location(self) -> ObserverLocation | None:
+        try:
+            lat = float((self.settings.get("observer_latitude") or "").strip())
+            lon = float((self.settings.get("observer_longitude") or "").strip())
+            elev = float((self.settings.get("observer_elevation_m") or "0").strip() or 0.0)
+            return ObserverLocation(latitude_deg=lat, longitude_deg=lon, elevation_m=elev)
+        except Exception:
+            return None
+
+    def _telescope_pointing(self) -> TelescopePointing:
+        mode = str((self.settings.get("telescope_mode") or "radec").strip() or "radec")
+
+        def _f(key: str, default: float | None = None) -> float | None:
+            try:
+                raw = (self.settings.get(key) or "").strip()
+                if raw == "":
+                    return default
+                return float(raw)
+            except Exception:
+                return default
+
+        return TelescopePointing(
+            mode=mode,
+            ra_deg=_f("telescope_ra_deg", None),
+            dec_deg=_f("telescope_dec_deg", None),
+            alt_deg=_f("telescope_alt_deg", None),
+            az_deg=_f("telescope_az_deg", None),
+            fov_deg=float(_f("telescope_fov_deg", 2.0) or 2.0),
+            min_alt_deg=float(_f("min_observing_altitude_deg", 20.0) or 20.0),
+        )
+
+    def _candidate_observability(self, ra: float | None, dec: float | None):
+        if ra is None or dec is None:
+            return None
+        observer = self._observer_location()
+        if observer is None:
+            return None
+        telescope = self._telescope_pointing()
+        try:
+            return evaluate_observability(float(ra), float(dec), observer, telescope)
+        except Exception:
+            return None
+
     def load_candidates(self) -> None:
         if not self.db_path.exists():
             self.candidates = []
             return
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        rows = [dict(r) for r in conn.execute("SELECT candidate_id, review_status FROM candidates ORDER BY last_seen DESC").fetchall()]
+        rows = [dict(r) for r in conn.execute("SELECT candidate_id, review_status, average_ra, average_dec FROM candidates ORDER BY last_seen DESC").fetchall()]
         conn.close()
         rf = self.review_filter.get()
         if rf != "all":
             rows = [r for r in rows if (r.get("review_status") or "new") == rf]
+
+        if bool(self.observable_only.get()):
+            visible_rows = []
+            for r in rows:
+                obs = self._candidate_observability(r.get("average_ra"), r.get("average_dec"))
+                if obs is not None and obs.visible_now:
+                    visible_rows.append(r)
+            rows = visible_rows
+
         self.candidates = rows
         self.candidate_list.delete(0, tk.END)
 
@@ -628,7 +734,9 @@ class AnalystConsoleApp(tk.Tk):
 
         for i, r in enumerate(rows):
             cid = str(r["candidate_id"])
-            self.candidate_list.insert(tk.END, f"{cid}  [{r.get('review_status','new')}]")
+            obs = self._candidate_observability(r.get("average_ra"), r.get("average_dec"))
+            prefix = "👁 " if (obs is not None and obs.visible_now) else ""
+            self.candidate_list.insert(tk.END, f"{prefix}{cid}  [{r.get('review_status','new')}]")
             pr = priority_by_candidate.get(cid, "low")
             self.candidate_list.itemconfig(i, fg=self._priority_color(pr))
 
@@ -710,6 +818,13 @@ class AnalystConsoleApp(tk.Tk):
             p["_py"] = y
             color = self._priority_color(str(p.get("followup_priority", "low")))
             r = 5 if str(p.get("followup_priority")) in ("urgent", "high") else 4
+
+            obs = self._candidate_observability(p.get("ra"), p.get("dec"))
+            if obs is not None and obs.in_fov:
+                c.create_oval(x - (r + 3), y - (r + 3), x + (r + 3), y + (r + 3), outline="#00d4ff", width=2)
+            elif obs is not None and obs.visible_now:
+                c.create_oval(x - (r + 2), y - (r + 2), x + (r + 2), y + (r + 2), outline="#9be15d", width=1)
+
             outline = "#ffffff" if p.get("candidate_id") == self.selected_candidate_id else ""
             c.create_oval(x - r, y - r, x + r, y + r, fill=color, outline=outline)
 
@@ -721,7 +836,7 @@ class AnalystConsoleApp(tk.Tk):
             fill="#bbb",
             width=max(120, width - (2 * side_pad)),
             font=("SF Pro Text", legend_font_size),
-            text="red=urgent, orange=high, blue=medium, gray=low",
+            text="red=urgent, orange=high, blue=medium, gray=low | green ring=observable now | cyan ring=in telescope FOV",
         )
 
     def _select_candidate_from_sky(self, cid: str) -> None:
@@ -1042,6 +1157,7 @@ class AnalystConsoleApp(tk.Tk):
     def refresh_detail(self) -> None:
         self.detail_text.delete("1.0", tk.END)
         self.context_text.delete("1.0", tk.END)
+        self.observability_text.delete("1.0", tk.END)
         for child in self.image_panel_container.winfo_children():
             child.destroy()
         self._image_photos = []
@@ -1090,6 +1206,9 @@ class AnalystConsoleApp(tk.Tk):
         }
         self.detail_text.insert("end", json.dumps(payload, indent=2))
         self.context_text.insert("end", self._format_context_panel(context))
+
+        obs = self._candidate_observability(cand.get("average_ra"), cand.get("average_dec"))
+        self.observability_text.insert("end", self._format_observability_panel(obs))
 
         self._overlay_ra = cand.get("average_ra")
         self._overlay_dec = cand.get("average_dec")
@@ -1178,6 +1297,29 @@ class AnalystConsoleApp(tk.Tk):
         sections.append(explanation)
         
         return "\n".join(sections)
+
+    def _format_observability_panel(self, obs) -> str:
+        observer = self._observer_location()
+        tel = self._telescope_pointing()
+        if observer is None:
+            return (
+                "Observer location not configured.\n"
+                "Set latitude/longitude in Settings to enable Alt/Az and visibility checks."
+            )
+        if obs is None:
+            return "No RA/DEC for selected candidate."
+
+        sep = "n/a" if obs.separation_deg is None else f"{obs.separation_deg:.2f}°"
+        lines = [
+            f"Observer: lat={observer.latitude_deg:.5f}, lon={observer.longitude_deg:.5f}, elev={observer.elevation_m:.0f}m",
+            f"Alt: {obs.alt_deg:.2f}°",
+            f"Az: {obs.az_deg:.2f}°",
+            f"Visible now: {'YES' if obs.visible_now else 'NO'} ({obs.status})",
+            f"In telescope FOV: {'YES' if obs.in_fov else 'NO'}",
+            f"Separation from telescope center: {sep}",
+            f"Telescope mode: {tel.mode} | FOV: {tel.fov_deg:.2f}° | Min alt: {tel.min_alt_deg:.1f}°",
+        ]
+        return "\n".join(lines)
 
     def _image_kind_label(self, kind: str) -> str:
         mapping = {
