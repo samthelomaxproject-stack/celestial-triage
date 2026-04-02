@@ -114,9 +114,33 @@ python3 -m celestial_triage.cli followup-report --limit 20
 
 ---
 
-## Broker ingestion (Lasair)
+## Broker ingestion (multi-broker: Lasair + ANTARES)
 
-Celestial Triage supports two Lasair broker domains.
+Celestial Triage uses a broker adapter layer (`BrokerAdapter` + `build_broker_adapter`) and currently supports:
+- Lasair (ZTF + LSST modes)
+- ANTARES (`api.antares.noirlab.edu/v1`)
+
+### ANTARES broker
+
+Public locus ingest example:
+
+```bash
+python3 -m celestial_triage.cli ingest-antares \
+  --api-url https://api.antares.noirlab.edu/v1 \
+  --limit 50 \
+  --offset 0
+```
+
+Optional token (when deployment policy requires auth):
+
+```bash
+export ANTARES_API_TOKEN="<your_token>"
+python3 -m celestial_triage.cli ingest-antares --limit 50
+```
+
+ANTARES records are normalized into the same detection/candidate pipeline with provenance `broker_name=antares_api`.
+
+### Lasair broker
 
 ### 1) ZTF broker
 - Domain: `https://lasair-ztf.lsst.ac.uk`
@@ -479,6 +503,7 @@ Current limitations:
 - LSST object payload/detail paths may not include broker cutout URLs or embedded stamp data for many objects.
 - Pan-STARRS does not cover all sky locations; some Rubin/LSST candidates may be out of coverage.
 - SkyView response behavior can vary (direct image vs HTML link flow).
+- Cross-broker merge is intentionally minimal in this phase; ANTARES and Lasair may remain separate candidates when no trivial association is available.
 - cutout lookup/render failures do not fail primary ingest; they are logged and skipped.
 
 ---

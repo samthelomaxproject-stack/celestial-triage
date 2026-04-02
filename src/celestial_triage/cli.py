@@ -25,6 +25,7 @@ from celestial_triage.ingest.external_jsonl import JsonlExternalAdapter
 from celestial_triage.ingest.image_assets import extract_image_assets_from_payload
 from celestial_triage.ingest.image_preview import render_preview_png
 from celestial_triage.ingest.lasair_api import LasairApiAdapter
+from celestial_triage.ingest.broker_factory import build_broker_adapter
 from celestial_triage.ingest.lasair_presets import PRESETS, resolve_preset
 from celestial_triage.ingest.survey_cutouts import ensure_layered_survey_images
 from celestial_triage.ingest.mock_feed import MockFeedAdapter
@@ -389,7 +390,8 @@ def cmd_ingest_lasair(args: argparse.Namespace) -> None:
             limit,
         )
 
-    adapter = LasairApiAdapter(
+    adapter = build_broker_adapter(
+        "lasair",
         token=token,
         query=query,
         limit=limit,
@@ -453,6 +455,45 @@ def cmd_ingest_lasair(args: argparse.Namespace) -> None:
         LOGGER.info("Cutout retrieval summary: %s", cutout_summary)
     if survey_summary is not None:
         LOGGER.info("Survey image summary: %s", survey_summary)
+
+def cmd_ingest_antares(args: argparse.Namespace) -> None:
+    db = Database(DB_PATH)
+    db.init()
+
+    adapter = build_broker_adapter(
+        "antares",
+        api_url=args.api_url,
+        token=args.token,
+        limit=args.limit,
+        offset=args.offset,
+        timeout=args.timeout,
+    )
+    events = adapter.fetch_events()
+    if not events:
+        LOGGER.warning("No ingestible ANTARES events returned")
+        return
+
+    accepted, skipped, n_candidates, _ = _ingest_raw_events(db, events, "antares")
+
+    # Preserve existing workflow behavior after ingest.
+    cmd_extract_features(args)
+    cmd_run_detectors(args)
+    cmd_assign_retention(args)
+
+    survey_summary: dict[str, int] | None = None
+    if not getattr(args, "skip_survey_images", False):
+        survey_summary = _link_layered_survey_context_images(db)
+
+    LOGGER.info(
+        "Ingested ANTARES (%d raw, %d accepted, %d skipped), %d candidates total",
+        len(events),
+        accepted,
+        skipped,
+        n_candidates,
+    )
+    if survey_summary is not None:
+        LOGGER.info("Survey image summary: %s", survey_summary)
+
 
 def cmd_extract_features(args: argparse.Namespace) -> None:
     db = Database(DB_PATH)
@@ -1030,6 +1071,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--skip-survey-images", action="store_true", help="Skip layered Pan-STARRS/SkyView survey context retrieval")
     p.add_argument("--token", type=str, default=None, help="Optional Lasair token override (otherwise use LASAIR_LSST_API_TOKEN or LASAIR_ZTF_API_TOKEN by mode)")
     p.set_defaults(func=cmd_ingest_lasair)
+
+    p = sub.add_parser("ingest-antares", help="Ingest live ANTARES loci records")
+    p.add_argument("--api-url", type=str, default=None, help="ANTARES API base URL (default: ANTARES_API_URL or https://api.antares.noirlab.edu/v1)")
+    p.add_argument("--token", type=str, default=None, help="Optional ANTARES API token override (otherwise ANTARES_API_TOKEN env)")
+    p.add_argument("--limit", type=int, default=100, help="Number of loci requested")
+    p.add_argument("--offset", type=int, default=0, help="Pagination offset")
+    p.add_argument("--timeout", type=float, default=30.0, help="HTTP timeout (seconds)")
+    p.add_argument("--skip-survey-images", action="store_true", help="Skip layered Pan-STARRS/SkyView survey context retrieval")
+    p.set_defaults(func=cmd_ingest_antares)
 
     p = sub.add_parser("extract-features", help="Compute shared candidate features")
     p.set_defaults(func=cmd_extract_features)

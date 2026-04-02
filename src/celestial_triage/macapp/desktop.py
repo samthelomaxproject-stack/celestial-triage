@@ -144,6 +144,7 @@ class AnalystConsoleApp(tk.Tk):
         payload = {
             "lasair_lsst_api_token": self.lasair_lsst_token_var.get().strip(),
             "lasair_ztf_api_token": self.lasair_ztf_token_var.get().strip(),
+            "antares_api_token": self.antares_token_var.get().strip() if hasattr(self, "antares_token_var") else "",
             "observer_latitude": self.observer_lat_var.get().strip() if hasattr(self, "observer_lat_var") else "",
             "observer_longitude": self.observer_lon_var.get().strip() if hasattr(self, "observer_lon_var") else "",
             "observer_elevation_m": self.observer_elev_var.get().strip() if hasattr(self, "observer_elev_var") else "0",
@@ -343,6 +344,7 @@ class AnalystConsoleApp(tk.Tk):
 
     def _build_ingest_tab(self) -> None:
         f = self.tab_ingest
+        self.ingest_broker = tk.StringVar(value="lasair")
         self.ingest_mode = tk.StringVar(value="lsst")
         self.ingest_base_url = tk.StringVar(value="https://lasair.lsst.ac.uk/api")
         self.ingest_preset = tk.StringVar(value="")
@@ -352,11 +354,15 @@ class AnalystConsoleApp(tk.Tk):
         self.ingest_selected = tk.StringVar(value="diaObjectId, ra, decl")
         self.ingest_tables = tk.StringVar(value="objects")
         self.ingest_conditions = tk.StringVar(value="1=1")
+        self.ingest_antares_api_url = tk.StringVar(value="https://api.antares.noirlab.edu/v1")
+        self.ingest_antares_offset = tk.StringVar(value="0")
+        self.ingest_antares_timeout = tk.StringVar(value="30")
 
         # Token status tracking
         self.ingest_token_status = tk.StringVar(value="")
 
         rows = [
+            ("Broker", self.ingest_broker),
             ("Mode", self.ingest_mode),
             ("Base URL", self.ingest_base_url),
             ("Preset", self.ingest_preset),
@@ -366,10 +372,17 @@ class AnalystConsoleApp(tk.Tk):
             ("Selected (lsst)", self.ingest_selected),
             ("Tables (lsst)", self.ingest_tables),
             ("Conditions (lsst)", self.ingest_conditions),
+            ("ANTARES API URL", self.ingest_antares_api_url),
+            ("ANTARES Offset", self.ingest_antares_offset),
+            ("ANTARES Timeout", self.ingest_antares_timeout),
         ]
         for i, (label, var) in enumerate(rows):
             ttk.Label(f, text=label).grid(row=i, column=0, sticky="w")
-            if label == "Mode":
+            if label == "Broker":
+                combo = ttk.Combobox(f, textvariable=var, values=["lasair", "antares"], state="readonly", width=32)
+                combo.grid(row=i, column=1, sticky="ew")
+                combo.bind("<<ComboboxSelected>>", self._on_ingest_broker_change)
+            elif label == "Mode":
                 combo = ttk.Combobox(f, textvariable=var, values=["ztf", "lsst"], state="readonly", width=32)
                 combo.grid(row=i, column=1, sticky="ew")
                 combo.bind("<<ComboboxSelected>>", self._on_ingest_mode_change)
@@ -378,11 +391,19 @@ class AnalystConsoleApp(tk.Tk):
         
         # Token warning label
         self.ingest_token_warning = ttk.Label(f, textvariable=self.ingest_token_status, foreground="#ff6b6b", wraplength=400)
-        self.ingest_token_warning.grid(row=9, column=0, columnspan=2, sticky="w", pady=(4, 0))
-        
-        ttk.Button(f, text="Run ingest-lasair", command=self.run_ingest_lasair).grid(row=10, column=0, columnspan=2, sticky="ew", pady=4)
+        self.ingest_token_warning.grid(row=13, column=0, columnspan=2, sticky="w", pady=(4, 0))
+
+        ttk.Button(f, text="Run ingest", command=self.run_ingest_lasair).grid(row=14, column=0, columnspan=2, sticky="ew", pady=4)
         
         # Initial token check
+        self._update_ingest_token_warning()
+
+    def _on_ingest_broker_change(self, _event=None) -> None:
+        broker = self.ingest_broker.get()
+        if broker == "antares":
+            self.ingest_base_url.set("https://api.antares.noirlab.edu/v1")
+        else:
+            self._on_ingest_mode_change()
         self._update_ingest_token_warning()
 
     def _on_ingest_mode_change(self, _event=None) -> None:
@@ -394,7 +415,18 @@ class AnalystConsoleApp(tk.Tk):
         self._update_ingest_token_warning()
 
     def _update_ingest_token_warning(self, _event=None) -> None:
-        """Update token warning based on selected mode."""
+        """Update token warning based on selected broker/mode."""
+        broker = self.ingest_broker.get()
+        if broker == "antares":
+            ant_token = (self.antares_token_var.get().strip() if hasattr(self, "antares_token_var") else "") or os.getenv("ANTARES_API_TOKEN", "")
+            if ant_token:
+                self.ingest_token_status.set("✓ ANTARES token configured (optional)")
+                self.ingest_token_warning.configure(foreground="#69c0ff")
+            else:
+                self.ingest_token_status.set("ANTARES public ingest enabled (token optional; set ANTARES_API_TOKEN if required)")
+                self.ingest_token_warning.configure(foreground="#a0a0a0")
+            return
+
         mode = self.ingest_mode.get()
         if mode == "lsst":
             lsst_token = (self.lasair_lsst_token_var.get().strip() if hasattr(self, "lasair_lsst_token_var") else "") or os.getenv("LASAIR_LSST_API_TOKEN", "")
@@ -461,6 +493,7 @@ class AnalystConsoleApp(tk.Tk):
         f = self.tab_settings
         self.lasair_lsst_token_var = tk.StringVar(value=self.settings.get("lasair_lsst_api_token", ""))
         self.lasair_ztf_token_var = tk.StringVar(value=self.settings.get("lasair_ztf_api_token", ""))
+        self.antares_token_var = tk.StringVar(value=self.settings.get("antares_api_token", ""))
 
         self.observer_lat_var = tk.StringVar(value=str(self.settings.get("observer_latitude", "")))
         self.observer_lon_var = tk.StringVar(value=str(self.settings.get("observer_longitude", "")))
@@ -480,40 +513,54 @@ class AnalystConsoleApp(tk.Tk):
         ttk.Label(f, text="Lasair ZTF API token").grid(row=1, column=0, sticky="w")
         ttk.Entry(f, textvariable=self.lasair_ztf_token_var, show="*", width=42).grid(row=1, column=1, sticky="ew")
 
-        ttk.Separator(f, orient="horizontal").grid(row=2, column=0, columnspan=2, sticky="ew", pady=6)
-        ttk.Label(f, text="Observer latitude (deg)").grid(row=3, column=0, sticky="w")
-        ttk.Entry(f, textvariable=self.observer_lat_var, width=20).grid(row=3, column=1, sticky="w")
-        ttk.Label(f, text="Observer longitude (deg)").grid(row=4, column=0, sticky="w")
-        ttk.Entry(f, textvariable=self.observer_lon_var, width=20).grid(row=4, column=1, sticky="w")
-        ttk.Label(f, text="Observer elevation (m)").grid(row=5, column=0, sticky="w")
-        ttk.Entry(f, textvariable=self.observer_elev_var, width=20).grid(row=5, column=1, sticky="w")
+        ttk.Label(f, text="ANTARES API token (optional)").grid(row=2, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.antares_token_var, show="*", width=42).grid(row=2, column=1, sticky="ew")
 
-        ttk.Separator(f, orient="horizontal").grid(row=6, column=0, columnspan=2, sticky="ew", pady=6)
-        ttk.Label(f, text="Telescope mode").grid(row=7, column=0, sticky="w")
-        ttk.Combobox(f, textvariable=self.telescope_mode_var, values=["radec", "altaz"], width=12, state="readonly").grid(row=7, column=1, sticky="w")
-        ttk.Label(f, text="Telescope RA (deg)").grid(row=8, column=0, sticky="w")
-        ttk.Entry(f, textvariable=self.telescope_ra_var, width=20).grid(row=8, column=1, sticky="w")
-        ttk.Label(f, text="Telescope DEC (deg)").grid(row=9, column=0, sticky="w")
-        ttk.Entry(f, textvariable=self.telescope_dec_var, width=20).grid(row=9, column=1, sticky="w")
-        ttk.Label(f, text="Telescope Alt (deg)").grid(row=10, column=0, sticky="w")
-        ttk.Entry(f, textvariable=self.telescope_alt_var, width=20).grid(row=10, column=1, sticky="w")
-        ttk.Label(f, text="Telescope Az (deg)").grid(row=11, column=0, sticky="w")
-        ttk.Entry(f, textvariable=self.telescope_az_var, width=20).grid(row=11, column=1, sticky="w")
-        ttk.Label(f, text="FOV (deg)").grid(row=12, column=0, sticky="w")
-        ttk.Entry(f, textvariable=self.telescope_fov_var, width=20).grid(row=12, column=1, sticky="w")
-        ttk.Label(f, text="Min observing altitude (deg)").grid(row=13, column=0, sticky="w")
-        ttk.Entry(f, textvariable=self.min_alt_var, width=20).grid(row=13, column=1, sticky="w")
+        ttk.Separator(f, orient="horizontal").grid(row=3, column=0, columnspan=2, sticky="ew", pady=6)
+        ttk.Label(f, text="Observer latitude (deg)").grid(row=4, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.observer_lat_var, width=20).grid(row=4, column=1, sticky="w")
+        ttk.Label(f, text="Observer longitude (deg)").grid(row=5, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.observer_lon_var, width=20).grid(row=5, column=1, sticky="w")
+        ttk.Label(f, text="Observer elevation (m)").grid(row=6, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.observer_elev_var, width=20).grid(row=6, column=1, sticky="w")
 
-        ttk.Button(f, text="Save Settings", command=self._save_settings).grid(row=14, column=0, columnspan=2, sticky="ew", pady=6)
+        ttk.Separator(f, orient="horizontal").grid(row=7, column=0, columnspan=2, sticky="ew", pady=6)
+        ttk.Label(f, text="Telescope mode").grid(row=8, column=0, sticky="w")
+        ttk.Combobox(f, textvariable=self.telescope_mode_var, values=["radec", "altaz"], width=12, state="readonly").grid(row=8, column=1, sticky="w")
+        ttk.Label(f, text="Telescope RA (deg)").grid(row=9, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.telescope_ra_var, width=20).grid(row=9, column=1, sticky="w")
+        ttk.Label(f, text="Telescope DEC (deg)").grid(row=10, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.telescope_dec_var, width=20).grid(row=10, column=1, sticky="w")
+        ttk.Label(f, text="Telescope Alt (deg)").grid(row=11, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.telescope_alt_var, width=20).grid(row=11, column=1, sticky="w")
+        ttk.Label(f, text="Telescope Az (deg)").grid(row=12, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.telescope_az_var, width=20).grid(row=12, column=1, sticky="w")
+        ttk.Label(f, text="FOV (deg)").grid(row=13, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.telescope_fov_var, width=20).grid(row=13, column=1, sticky="w")
+        ttk.Label(f, text="Min observing altitude (deg)").grid(row=14, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.min_alt_var, width=20).grid(row=14, column=1, sticky="w")
+
+        ttk.Button(f, text="Save Settings", command=self._save_settings).grid(row=15, column=0, columnspan=2, sticky="ew", pady=6)
         ttk.Label(
             f,
             text=f"Stored at: {self.settings_file}",
             foreground="#666",
-        ).grid(row=15, column=0, columnspan=2, sticky="w")
+        ).grid(row=16, column=0, columnspan=2, sticky="w")
 
         self._update_ingest_token_warning()
 
     def run_ingest_lasair(self) -> None:
+        broker = self.ingest_broker.get()
+        if broker == "antares":
+            params = {
+                "api_url": self.ingest_antares_api_url.get() or self.ingest_base_url.get(),
+                "limit": self.ingest_limit.get(),
+                "offset": self.ingest_antares_offset.get(),
+                "timeout": self.ingest_antares_timeout.get(),
+            }
+            self.run_command("ingest-antares", params)
+            return
+
         params = {
             "lasair_mode": self.ingest_mode.get(),
             "base_url": self.ingest_base_url.get(),
@@ -573,6 +620,9 @@ class AnalystConsoleApp(tk.Tk):
             extra_env["LASAIR_LSST_API_TOKEN"] = lsst_token
         if ztf_token:
             extra_env["LASAIR_ZTF_API_TOKEN"] = ztf_token
+        antares_token = (self.antares_token_var.get() if hasattr(self, "antares_token_var") else "").strip()
+        if antares_token:
+            extra_env["ANTARES_API_TOKEN"] = antares_token
 
         result = self.runner.run(name, params, cwd=self.repo_root, extra_env=extra_env)
         self.command_history.append({"name": name, "success": result.success, "at": result.ran_at})
@@ -708,6 +758,19 @@ class AnalystConsoleApp(tk.Tk):
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         rows = [dict(r) for r in conn.execute("SELECT candidate_id, review_status, average_ra, average_dec FROM candidates ORDER BY last_seen DESC").fetchall()]
+        for row in rows:
+            prov_rows = conn.execute(
+                """
+                SELECT d.broker_name, COUNT(*) as n
+                FROM detections d
+                JOIN candidate_detections cd ON cd.detection_id=d.detection_id
+                WHERE cd.candidate_id=?
+                GROUP BY d.broker_name
+                ORDER BY d.broker_name ASC
+                """,
+                (row["candidate_id"],),
+            ).fetchall()
+            row["broker_summary"] = ", ".join(f"{r['broker_name']}:{int(r['n'])}" for r in prov_rows)
         conn.close()
         rf = self.review_filter.get()
         if rf != "all":
@@ -736,7 +799,9 @@ class AnalystConsoleApp(tk.Tk):
             cid = str(r["candidate_id"])
             obs = self._candidate_observability(r.get("average_ra"), r.get("average_dec"))
             prefix = "👁 " if (obs is not None and obs.visible_now) else ""
-            self.candidate_list.insert(tk.END, f"{prefix}{cid}  [{r.get('review_status','new')}]")
+            broker_summary = str(r.get("broker_summary") or "")
+            suffix = f" | {broker_summary}" if broker_summary else ""
+            self.candidate_list.insert(tk.END, f"{prefix}{cid}  [{r.get('review_status','new')}] {suffix}")
             pr = priority_by_candidate.get(cid, "low")
             self.candidate_list.itemconfig(i, fg=self._priority_color(pr))
 
@@ -1197,6 +1262,10 @@ class AnalystConsoleApp(tk.Tk):
             },
             "timeline_count": len(dets),
             "provenance_sources": sorted({d.get("broker_name", "unknown") for d in dets}),
+            "provenance_counts": {
+                k: sum(1 for d in dets if str(d.get("broker_name", "unknown")) == k)
+                for k in sorted({str(d.get("broker_name", "unknown")) for d in dets})
+            },
             "plate_solve_provenance": {
                 "count": context.get("plate_solve_count", 0),
                 "latest_timestamp": context.get("latest_plate_solve_timestamp"),
