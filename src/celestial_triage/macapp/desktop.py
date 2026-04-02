@@ -343,7 +343,29 @@ class AnalystConsoleApp(tk.Tk):
         self.console_text.grid(row=3, column=0, sticky="nsew", pady=6)
 
     def _build_ingest_tab(self) -> None:
-        f = self.tab_ingest
+        outer = self.tab_ingest
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(0, weight=1)
+
+        self.ingest_canvas = tk.Canvas(outer, highlightthickness=0)
+        self.ingest_scroll = ttk.Scrollbar(outer, orient="vertical", command=self.ingest_canvas.yview)
+        self.ingest_canvas.configure(yscrollcommand=self.ingest_scroll.set)
+        self.ingest_canvas.grid(row=0, column=0, sticky="nsew")
+        self.ingest_scroll.grid(row=0, column=1, sticky="ns")
+
+        f = ttk.Frame(self.ingest_canvas)
+        f.columnconfigure(1, weight=1)
+        self.ingest_canvas_window = self.ingest_canvas.create_window((0, 0), window=f, anchor="nw")
+
+        def _on_ingest_frame_configure(_event=None):
+            self.ingest_canvas.configure(scrollregion=self.ingest_canvas.bbox("all"))
+
+        def _on_ingest_canvas_configure(event):
+            self.ingest_canvas.itemconfigure(self.ingest_canvas_window, width=event.width)
+
+        f.bind("<Configure>", _on_ingest_frame_configure)
+        self.ingest_canvas.bind("<Configure>", _on_ingest_canvas_configure)
+
         self.ingest_broker = tk.StringVar(value="lasair")
         self.ingest_mode = tk.StringVar(value="lsst")
         self.ingest_base_url = tk.StringVar(value="https://lasair.lsst.ac.uk/api")
@@ -388,13 +410,13 @@ class AnalystConsoleApp(tk.Tk):
                 combo.bind("<<ComboboxSelected>>", self._on_ingest_mode_change)
             else:
                 ttk.Entry(f, textvariable=var, width=40).grid(row=i, column=1, sticky="ew")
-        
+
         # Token warning label
         self.ingest_token_warning = ttk.Label(f, textvariable=self.ingest_token_status, foreground="#ff6b6b", wraplength=400)
         self.ingest_token_warning.grid(row=13, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
         ttk.Button(f, text="Run ingest", command=self.run_ingest_lasair).grid(row=14, column=0, columnspan=2, sticky="ew", pady=4)
-        
+
         # Initial token check
         self._update_ingest_token_warning()
 
