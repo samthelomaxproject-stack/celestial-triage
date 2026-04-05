@@ -31,7 +31,7 @@ class AntaresApiAdapter(BrokerAdapter):
     ) -> None:
         self.api_url = (api_url or os.getenv("ANTARES_API_URL") or "https://api.antares.noirlab.edu/v1").rstrip("/")
         self.token = token or os.getenv("ANTARES_API_TOKEN", "")
-        self.limit = max(1, min(1000, int(limit)))
+        self.limit = max(1, int(limit))
         self.offset = max(0, int(offset))
         self.timeout = max(5.0, float(timeout))
 

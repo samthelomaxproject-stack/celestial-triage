@@ -54,15 +54,15 @@ class LasairApiAdapter(BrokerAdapter):
             default_base = "https://lasair-ztf.lsst.ac.uk/api"
 
         self.query = query
-        self.limit = max(1, min(1000, int(limit)))
-        self.days_back = max(1, min(30, int(days_back)))
+        self.limit = max(1, int(limit))
+        self.days_back = max(1, int(days_back))
         env_base_url = os.getenv("LASAIR_API_BASE_URL", "").strip()
         resolved_base = base_url or env_base_url or default_base
         self.base_url = resolved_base.rstrip("/")
         self.selected = selected.strip()
         self.tables = tables.strip()
         self.conditions = conditions.strip()
-        self.batch_size = max(1, min(200, int(batch_size)))
+        self.batch_size = max(1, int(batch_size))
         self.request_delay = max(0.0, float(request_delay))
         self.max_retries = max(0, int(max_retries))
 
