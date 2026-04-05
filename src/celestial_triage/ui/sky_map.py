@@ -3,6 +3,7 @@ from __future__ import annotations
 from math import isfinite
 from typing import Any
 
+from celestial_triage.motion.analysis import analyze_candidate_motion
 from celestial_triage.scoring.followup import build_followup_priority
 from celestial_triage.scoring.interpretation import build_interpretation_summary
 from celestial_triage.storage.db import Database
@@ -35,6 +36,8 @@ def prepare_candidate_sky_points(db: Database) -> list[dict[str, Any]]:
         follow = build_followup_priority(feats, score_map, review_state)
         interp = build_interpretation_summary(feats, score_map)
 
+        motion = analyze_candidate_motion(db.get_detections_for_candidate(cid))
+
         points.append(
             {
                 "candidate_id": cid,
@@ -45,6 +48,7 @@ def prepare_candidate_sky_points(db: Database) -> list[dict[str, Any]]:
                 "followup_priority": follow.get("priority", "low"),
                 "followup_score": float(follow.get("priority_score", 0.0)),
                 "primary_interpretation": interp.get("primary_interpretation", "unknown"),
+                "motion_anomaly_flag": bool(motion.get("motion_anomaly_flag", False)),
             }
         )
     return points

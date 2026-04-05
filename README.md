@@ -412,12 +412,15 @@ The selected candidate includes a **Context Panel** optimized for quick analyst 
    - ✓/✗/? Catalog match status
    - 🏠/∅/? Host association
    - ⚠ Nearest object (if <60 arcsec)
-4. **PROVENANCE** - Detection sources and history count (compact)
+4. **MOTION** - First-pass local trajectory behavior (from stored detections only)
+   - Motion state: `stable` / `unusual` / `insufficient data`
+   - Velocity (arcsec/sec), span (sec), short anomaly reason
+5. **PROVENANCE** - Detection sources and history count (compact)
    - includes linked plate-solve provenance when present:
      - plate_solve_count
      - latest solve timestamp
      - latest solver backend/status
-5. **SUMMARY** - Natural-language concise explanation
+6. **SUMMARY** - Natural-language concise explanation
 
 **Quick-scan indicators** allow rapid pattern recognition without reading full text.
 

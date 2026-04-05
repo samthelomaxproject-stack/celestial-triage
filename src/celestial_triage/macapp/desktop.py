@@ -811,18 +811,23 @@ class AnalystConsoleApp(tk.Tk):
 
         # Match candidate queue text color to Sky Map follow-up priority colors.
         priority_by_candidate: dict[str, str] = {}
+        motion_anomaly_by_candidate: dict[str, bool] = {}
         try:
             for p in prepare_candidate_sky_points(self.db):
-                priority_by_candidate[str(p.get("candidate_id"))] = str(p.get("followup_priority") or "low")
+                cid = str(p.get("candidate_id"))
+                priority_by_candidate[cid] = str(p.get("followup_priority") or "low")
+                motion_anomaly_by_candidate[cid] = bool(p.get("motion_anomaly_flag", False))
         except Exception:
             priority_by_candidate = {}
+            motion_anomaly_by_candidate = {}
 
         for i, r in enumerate(rows):
             cid = str(r["candidate_id"])
             obs = self._candidate_observability(r.get("average_ra"), r.get("average_dec"))
             prefix = "👁 " if (obs is not None and obs.visible_now) else ""
             broker_summary = str(r.get("broker_summary") or "")
-            suffix = f" | {broker_summary}" if broker_summary else ""
+            motion_tag = " ⚠motion" if motion_anomaly_by_candidate.get(cid, False) else ""
+            suffix = f" | {broker_summary}{motion_tag}" if (broker_summary or motion_tag) else ""
             self.candidate_list.insert(tk.END, f"{prefix}{cid}  [{r.get('review_status','new')}] {suffix}")
             pr = priority_by_candidate.get(cid, "low")
             self.candidate_list.itemconfig(i, fg=self._priority_color(pr))
@@ -913,6 +918,8 @@ class AnalystConsoleApp(tk.Tk):
                 c.create_oval(x - (r + 2), y - (r + 2), x + (r + 2), y + (r + 2), outline="#9be15d", width=1)
 
             outline = "#ffffff" if p.get("candidate_id") == self.selected_candidate_id else ""
+            if bool(p.get("motion_anomaly_flag", False)):
+                c.create_oval(x - (r + 4), y - (r + 4), x + (r + 4), y + (r + 4), outline="#ff5c5c", width=1)
             c.create_oval(x - r, y - r, x + r, y + r, fill=color, outline=outline)
 
         legend_font_size = max(8, min(11, int(width / 90)))
@@ -1363,7 +1370,21 @@ class AnalystConsoleApp(tk.Tk):
             sections.append(f"⚠ Nearest: {nearest_arc:.1f}\"")
         
         sections.append("")
-        
+
+        # === MOTION (first-pass local trajectory analysis) ===
+        sections.append("═══ MOTION ═══")
+        motion_state = str(context.get("motion_state") or "insufficient data")
+        vel = float(context.get("motion_avg_velocity_arcsec_per_sec") or 0.0)
+        span = float(context.get("motion_total_time_span_sec") or 0.0)
+        m_reason = str(context.get("motion_anomaly_reason") or "")
+        sections.append(f"Motion: {motion_state}")
+        sections.append(f"Velocity: {vel:.4f} arcsec/s")
+        sections.append(f"Span: {int(span)} sec")
+        if m_reason:
+            sections.append(f"Reason: {m_reason}")
+
+        sections.append("")
+
         # === PROVENANCE (compact) ===
         sections.append("═══ PROVENANCE ═══")
         prov = g('provenance_note', 'unknown')

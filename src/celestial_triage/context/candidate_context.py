@@ -3,6 +3,7 @@ from __future__ import annotations
 from math import cos, radians, sqrt
 from typing import Any
 
+from celestial_triage.motion.analysis import analyze_candidate_motion
 from celestial_triage.scoring.followup import build_followup_priority
 from celestial_triage.scoring.interpretation import build_interpretation_summary
 from celestial_triage.storage.db import Database
@@ -63,6 +64,10 @@ def build_candidate_context(db: Database, candidate_id: str) -> dict[str, Any]:
             "latest_plate_solve_status": None,
             "anomaly_flag": False,
             "anomaly_reason": "Insufficient context data",
+            "motion_state": "insufficient data",
+            "motion_anomaly_flag": False,
+            "motion_anomaly_score": 0.0,
+            "motion_anomaly_reason": "insufficient data",
             # legacy keys used by existing export/UI paths
             "nearest_object_summary": "No context available",
             "host_hint": "unknown",
@@ -92,6 +97,10 @@ def build_candidate_context(db: Database, candidate_id: str) -> dict[str, Any]:
             "latest_plate_solve_status": None,
             "anomaly_flag": False,
             "anomaly_reason": "Insufficient context data",
+            "motion_state": "insufficient data",
+            "motion_anomaly_flag": False,
+            "motion_anomaly_score": 0.0,
+            "motion_anomaly_reason": "insufficient data",
             "nearest_object_summary": "No context available",
             "host_hint": "unknown",
             "nearest_object_arcsec": None,
@@ -221,6 +230,10 @@ def build_candidate_context(db: Database, candidate_id: str) -> dict[str, Any]:
 
     context_status = "rich" if (nearest is not None or images or provenance) else "limited"
 
+    # Motion analysis (first-pass local behavior only).
+    det_history = db.get_detections_for_candidate(candidate_id)
+    motion = analyze_candidate_motion(det_history)
+
     # Build concise, analyst-friendly explanation
     density_desc = {"isolated": "Isolated field", "moderate": "Moderately crowded", "crowded": "Crowded field"}
     field_text = density_desc.get(density, f"{density.capitalize()} field")
@@ -260,7 +273,17 @@ def build_candidate_context(db: Database, candidate_id: str) -> dict[str, Any]:
         "crowdedness_note": density,
         "catalog_context_note": catalog_match,
         "provenance_note": " | ".join([p for p in [provenance_summary, plate_solve_note] if p]) or "unknown",
-        "candidate_history_count": len(db.get_detections_for_candidate(candidate_id)),
+        "candidate_history_count": len(det_history),
+        "motion_state": motion.get("motion_state", "insufficient data"),
+        "motion_anomaly_flag": bool(motion.get("motion_anomaly_flag", False)),
+        "motion_anomaly_score": float(motion.get("motion_anomaly_score", 0.0) or 0.0),
+        "motion_anomaly_reason": str(motion.get("motion_anomaly_reason", "insufficient data")),
+        "motion_detection_count_used": int(motion.get("detection_count_used", 0) or 0),
+        "motion_total_time_span_sec": float(motion.get("total_time_span_sec", 0.0) or 0.0),
+        "motion_angular_displacement_arcsec": float(motion.get("angular_displacement_arcsec", 0.0) or 0.0),
+        "motion_avg_velocity_arcsec_per_sec": float(motion.get("average_angular_velocity_arcsec_per_sec", 0.0) or 0.0),
+        "motion_avg_position_angle_deg": motion.get("average_position_angle_deg"),
+        "motion_consistency_score": motion.get("motion_consistency_score"),
         "followup_priority": follow_pri,
         "interpretation_summary": primary_interp,
         "image_availability": image_note,
