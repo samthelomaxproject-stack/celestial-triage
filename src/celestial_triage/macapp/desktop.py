@@ -208,9 +208,17 @@ class AnalystConsoleApp(tk.Tk):
         ttk.Button(filter_row, text="Refresh", command=self.refresh_all).pack(side=tk.LEFT)
         ttk.Button(filter_row, text="Solve Image...", command=self.open_plate_solve_dialog).pack(side=tk.LEFT, padx=4)
 
-        self.candidate_list = tk.Listbox(parent, height=30)
-        self.candidate_list.grid(row=2, column=0, sticky="nsew")
+        queue_frame = ttk.Frame(parent)
+        queue_frame.grid(row=2, column=0, sticky="nsew")
+        queue_frame.columnconfigure(0, weight=1)
+        queue_frame.rowconfigure(0, weight=1)
+
+        self.candidate_list = tk.Listbox(queue_frame, height=30)
+        self.candidate_list.grid(row=0, column=0, sticky="nsew")
         self.candidate_list.bind("<<ListboxSelect>>", self.on_select_candidate)
+        self.candidate_scroll = ttk.Scrollbar(queue_frame, orient="vertical", command=self.candidate_list.yview)
+        self.candidate_scroll.grid(row=0, column=1, sticky="ns")
+        self.candidate_list.configure(yscrollcommand=self.candidate_scroll.set)
 
     def _build_center(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
@@ -371,7 +379,7 @@ class AnalystConsoleApp(tk.Tk):
         self.ingest_base_url = tk.StringVar(value="https://lasair.lsst.ac.uk/api")
         self.ingest_preset = tk.StringVar(value="")
         self.ingest_limit = tk.StringVar(value="100")
-        self.ingest_days_back = tk.StringVar(value="3")
+        self.ingest_days_back = tk.StringVar(value="30")
         self.ingest_query = tk.StringVar(value="")
         self.ingest_selected = tk.StringVar(value="diaObjectId, ra, decl")
         self.ingest_tables = tk.StringVar(value="objects")

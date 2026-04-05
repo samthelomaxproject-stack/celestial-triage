@@ -340,7 +340,7 @@ def cmd_ingest_lasair(args: argparse.Namespace) -> None:
     lasair_mode = (args.lasair_mode or "ztf").strip().lower()
     query = args.query or "objectId:*"
     limit = args.limit if args.limit is not None else 100
-    days_back = args.days_back if args.days_back is not None else 3
+    days_back = args.days_back if args.days_back is not None else 30
     selected = (args.selected or "").strip()
     tables = (args.tables or "").strip()
     conditions = (args.conditions or "").strip()
